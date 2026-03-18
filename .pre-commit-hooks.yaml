@@ -1,0 +1,15 @@
+- id: chowkidar-gate
+  name: Chowkidar Deprecation Gate
+  description: Block commits that contain deprecated LLM model strings
+  entry: chowkidar gate
+  language: python
+  types: [text]
+  args: ["--severity", "block-sunset"]
+
+- id: chowkidar-staged
+  name: Chowkidar Staged File Check
+  description: Check only staged files for newly added deprecated models
+  entry: python -c "import sys; from chowkidar.gate import run_gate_staged; from pathlib import Path; ec, _ = run_gate_staged(Path('.'), sys.argv[1:]); sys.exit(ec)"
+  language: python
+  types: [text]
+  pass_filenames: true

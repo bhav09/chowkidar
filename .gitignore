@@ -1,0 +1,45 @@
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+*.bak
+
+# SQLite
+registry.db
+*.sqlite3
+
+# Byte-compiled / optimized
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Distribution / packaging
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# IDE / Editor
+.idea/
+.vscode/
+*.swp
+.DS_Store

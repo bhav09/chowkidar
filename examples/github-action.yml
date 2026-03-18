@@ -1,0 +1,25 @@
+name: Chowkidar Deprecation Gate
+on:
+  pull_request:
+    branches: [main, master]
+  push:
+    branches: [main, master]
+
+jobs:
+  deprecation-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Chowkidar
+        run: pip install chowkidar
+
+      - name: Sync deprecation data
+        run: chowkidar sync
+
+      - name: Run deprecation gate
+        run: chowkidar gate . --format github-actions --severity block-sunset

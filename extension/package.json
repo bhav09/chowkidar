@@ -1,0 +1,119 @@
+{
+  "name": "chowkidar",
+  "displayName": "Chowkidar — LLM Deprecation Watchdog",
+  "description": "Warns you when the AI models in your .env files are deprecated or sunsetting. Inline diagnostics, one-click fixes, cost analysis.",
+  "version": "0.1.0",
+  "publisher": "bhavishya",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Linters",
+    "Other"
+  ],
+  "keywords": [
+    "llm",
+    "model",
+    "deprecation",
+    "openai",
+    "anthropic",
+    "gpt",
+    "claude",
+    "gemini",
+    "env"
+  ],
+  "activationEvents": [
+    "workspaceContains:**/.env",
+    "workspaceContains:**/.env.local"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "chowkidar.sync",
+        "title": "Chowkidar: Sync Deprecation Registry"
+      },
+      {
+        "command": "chowkidar.check",
+        "title": "Chowkidar: Check Project"
+      },
+      {
+        "command": "chowkidar.report",
+        "title": "Chowkidar: Generate Report"
+      },
+      {
+        "command": "chowkidar.fixAll",
+        "title": "Chowkidar: Fix All Deprecated Models"
+      },
+      {
+        "command": "chowkidar.showDashboard",
+        "title": "Chowkidar: Open Dashboard"
+      },
+      {
+        "command": "chowkidar.refresh",
+        "title": "Chowkidar: Refresh Diagnostics"
+      }
+    ],
+    "configuration": {
+      "title": "Chowkidar",
+      "properties": {
+        "chowkidar.pythonPath": {
+          "type": "string",
+          "default": "",
+          "description": "Path to the Python interpreter or chowkidar binary. Leave empty for auto-detection."
+        },
+        "chowkidar.autoSyncOnStartup": {
+          "type": "boolean",
+          "default": false,
+          "description": "Automatically sync the deprecation registry when the extension activates."
+        },
+        "chowkidar.severity": {
+          "type": "string",
+          "default": "block-sunset",
+          "enum": [
+            "block-sunset",
+            "block-7d",
+            "block-30d",
+            "block-all"
+          ],
+          "description": "Minimum severity level for inline diagnostics."
+        },
+        "chowkidar.diagnosticsOnSave": {
+          "type": "boolean",
+          "default": true,
+          "description": "Refresh diagnostics when .env files are saved."
+        }
+      }
+    },
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "chowkidar",
+          "title": "Chowkidar",
+          "icon": "media/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "chowkidar": [
+        {
+          "type": "webview",
+          "id": "chowkidar.dashboard",
+          "name": "Dashboard"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "lint": "eslint src --ext ts"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.85.0",
+    "@types/node": "^20.0.0",
+    "typescript": "^5.3.0"
+  }
+}

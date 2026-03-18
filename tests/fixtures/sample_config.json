@@ -1,0 +1,13 @@
+{
+  "llm": {
+    "model": "gpt-4o",
+    "provider": "openai"
+  },
+  "fallback": {
+    "model": "claude-3-haiku-20240307",
+    "provider": "anthropic"
+  },
+  "embedding": {
+    "model": "text-embedding-ada-002"
+  }
+}
