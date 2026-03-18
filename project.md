@@ -1,5 +1,21 @@
 # Chowkidar — Enhanced Task Brief (ETB)
 
+## Pre-Execution Protocol: ETB Mandatory Fields for GitHub Push & VSIX Build
+
+* **User Goal:** Push the repository to GitHub and build the VS Code extension `.vsix` package for marketplace/fork distribution.
+* **Mode:** [Production] Pushing code to a public/private GitHub repository and building an official `.vsix` artifact requires clean commits and properly bundled dependencies. No broken builds.
+* **Code Grounding:** `.git/`, `extension/package.json`, `extension/` directory.
+* **Dependency Check:** Using `gh` CLI (or standard git commands) for GitHub repo creation/push. Using `npm` and `vsce` to package the VS Code extension.
+* **The "Safety Audit":**
+  * *Production:* Ensure the `.gitignore` correctly prevents the PyPI token or any secrets from being pushed. Ensure `.vsix` is built cleanly and tests pass for the extension (if any exist).
+* **Step-by-Step Plan:**
+  1. Add/commit the newly generated `DISTRIBUTION.md` into the local Git repo.
+  2. Use the GitHub CLI (`gh repo create`) to initialize the GitHub remote and push the `main` branch.
+  3. Navigate to the `extension/` directory.
+  4. Run `npm install` to gather the VS Code extension dependencies.
+  5. Run `npx vsce package` to generate the `.vsix` artifact.
+  6. Add the `.vsix` to GitHub releases or the main repo as requested.
+
 ## Status: AWAITING APPROVAL
 
 ---

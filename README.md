@@ -1,5 +1,9 @@
 # Chowkidar
 
+*(Dependabot for your LLMs)*
+
+[![PyPI Version](https://img.shields.io/pypi/v/chowkidar.svg)](https://pypi.org/project/chowkidar/) [![PyPI Downloads](https://img.shields.io/pypi/dm/chowkidar.svg)](https://pypi.org/project/chowkidar/) [![VS Code Marketplace Version](https://img.shields.io/visual-studio-marketplace/v/bhavishya.chowkidar.svg)](https://marketplace.visualstudio.com/items?itemName=bhavishya.chowkidar) [![VS Code Marketplace Downloads](https://img.shields.io/visual-studio-marketplace/d/bhavishya.chowkidar.svg)](https://marketplace.visualstudio.com/items?itemName=bhavishya.chowkidar)
+
 **Local-first LLM model deprecation watchdog.**
 
 Chowkidar scans your project configs for LLM model strings, cross-references them against a local deprecation registry, and alerts you before models sunset — via desktop notifications and IDE rules that instruct AI assistants to update deprecated models automatically.
