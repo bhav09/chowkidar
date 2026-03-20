@@ -6,8 +6,10 @@ import logging
 import re
 
 import httpx
+from diskcache import Cache
 from tenacity import retry, stop_after_attempt, wait_exponential
 
+from ..config import CHOWKIDAR_HOME
 from .base import DeprecationNotice, ModelInfo
 
 logger = logging.getLogger(__name__)
@@ -60,10 +62,16 @@ class AnthropicProvider:
                 )
 
         try:
-            async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
-                resp = await client.get(ANTHROPIC_MODELS_URL)
-                if resp.status_code == 200:
-                    scraped = self._parse_models_page(resp.text)
+            with Cache(str(CHOWKIDAR_HOME / "cache" / "anthropic")) as cache:
+                html = cache.get("models_html")
+                if not html:
+                    async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
+                        resp = await client.get(ANTHROPIC_MODELS_URL)
+                        if resp.status_code == 200:
+                            html = resp.text
+                            cache.set("models_html", html, expire=86400)
+                if html:
+                    scraped = self._parse_models_page(html)
                     for s in scraped:
                         notices_by_id[s.model_id] = s
         except httpx.HTTPError as e:

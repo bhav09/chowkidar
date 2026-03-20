@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -80,18 +81,37 @@ def scan_directory(directory: str | Path) -> ScanResult:
     result = ScanResult(project_path=str(directory))
 
     env_files = discover_env_files(directory)
-    for env_file in env_files:
-        result.env_entries.extend(parse_env_file(env_file))
-
     config_files = discover_config_files(directory)
 
-    for yaml_file in config_files["yaml"]:
-        result.config_entries.extend(parse_yaml_file(yaml_file))
-    for toml_file in config_files["toml"]:
-        result.config_entries.extend(parse_toml_file(toml_file))
-    for json_file in config_files["json"]:
-        result.config_entries.extend(parse_json_file(json_file))
-    for source_file in config_files["source"]:
-        result.config_entries.extend(parse_source_file(source_file))
+    with ThreadPoolExecutor() as executor:
+        # Schedule pure env files
+        env_futures = {executor.submit(parse_env_file, f): f for f in env_files}
+        
+        # Schedule config files mapped to their parser function
+        config_tasks = []
+        for yaml_file in config_files["yaml"]:
+            config_tasks.append((parse_yaml_file, yaml_file))
+        for toml_file in config_files["toml"]:
+            config_tasks.append((parse_toml_file, toml_file))
+        for json_file in config_files["json"]:
+            config_tasks.append((parse_json_file, json_file))
+        for source_file in config_files["source"]:
+            config_tasks.append((parse_source_file, source_file))
+
+        config_futures = {executor.submit(func, f): f for func, f in config_tasks}
+
+        # Gather results
+        for future in as_completed(env_futures):
+            try:
+                result.env_entries.extend(future.result())
+            except Exception:
+                pass
+
+        for future in as_completed(config_futures):
+            try:
+                result.config_entries.extend(future.result())
+            except Exception:
+                pass
 
     return result
+

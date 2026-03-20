@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "chowkidar"
-version = "0.1.0"
+version = "0.2.0"
 description = "Local-first LLM model deprecation watchdog — scans your configs, alerts on sunsets, and instructs your IDE to update."
 readme = "README.md"
 license = { text = "MIT" }
@@ -33,6 +33,7 @@ dependencies = [
     "pyyaml>=6.0",
     "schedule>=1.2.0",
     "mcp>=1.0.0",
+    "diskcache>=5.0.0",
 ]
 
 [project.optional-dependencies]

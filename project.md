@@ -1,20 +1,21 @@
 # Chowkidar — Enhanced Task Brief (ETB)
 
-## Pre-Execution Protocol: ETB Mandatory Fields for GitHub Push & VSIX Build
+# Chowkidar — Enhanced Task Brief (ETB)
 
-* **User Goal:** Push the repository to GitHub and build the VS Code extension `.vsix` package for marketplace/fork distribution.
-* **Mode:** [Production] Pushing code to a public/private GitHub repository and building an official `.vsix` artifact requires clean commits and properly bundled dependencies. No broken builds.
-* **Code Grounding:** `.git/`, `extension/package.json`, `extension/` directory.
-* **Dependency Check:** Using `gh` CLI (or standard git commands) for GitHub repo creation/push. Using `npm` and `vsce` to package the VS Code extension.
+## Pre-Execution Protocol: ETB Mandatory Fields for v0.2.0 (Testing, Optimization, Expansion & Release)
+
+* **User Goal:** Comprehensively test the application (unit, integration, E2E), identify and fix bugs, optimize UX/execution time, add robust logical features, and bump versions across GitHub, PyPI, and VS Code Marketplace.
+* **Mode:** [Production] As a Staff SDE, executing a major version bump (v0.2.0) requires exhaustive validation. The focus is on resilience, speed, zero-downtime, and comprehensive cross-platform distribution.
+* **Code Grounding:** `tests/`, `src/chowkidar/`, `extension/`, `pyproject.toml`, `extension/package.json`
+* **Dependency Check:** Python caching tools (`diskcache` or `functools.lru_cache`) might be necessary for optimization.
 * **The "Safety Audit":**
-  * *Production:* Ensure the `.gitignore` correctly prevents the PyPI token or any secrets from being pushed. Ensure `.vsix` is built cleanly and tests pass for the extension (if any exist).
+  * *Production:* Ensure that new features (like caching or automated suggestions) do not introduce Race Conditions or bloat the sync time. Test the CLI concurrently. Verify `.vsix` build doesn't bundle unnecessary large assets.
 * **Step-by-Step Plan:**
-  1. Add/commit the newly generated `DISTRIBUTION.md` into the local Git repo.
-  2. Use the GitHub CLI (`gh repo create`) to initialize the GitHub remote and push the `main` branch.
-  3. Navigate to the `extension/` directory.
-  4. Run `npm install` to gather the VS Code extension dependencies.
-  5. Run `npx vsce package` to generate the `.vsix` artifact.
-  6. Add the `.vsix` to GitHub releases or the main repo as requested.
+  1. **Comprehensive Validation:** Run `pytest` (unit/integration) and CLI subprocesses (E2E). Address any bugs found immediately.
+  2. **Optimization:** Implement caching for the `sync` scraper and local registry to drastically reduce `chowkidar sync` execution time and minimize provider API hitting.
+  3. **Feature Addition:** Introduce a "cost/speed aware" successor recommendation logic or parallelize the `scan` across large directories using `ThreadPoolExecutor` to dramatically improve UX on massive mono-repos.
+  4. **Version Bumping:** Update `pyproject.toml` and `package.json` to version `0.2.0`.
+  5. **Distribution:** Build and securely push to GitHub (git push), PyPI (`twine`), and package the new `.vsix` (`vsce`).
 
 ## Status: AWAITING APPROVAL
 

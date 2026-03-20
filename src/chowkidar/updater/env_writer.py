@@ -139,7 +139,7 @@ def rollback_env(file_path: Path) -> dict:
         return {"status": "error", "message": f"No backup found at {backup_path}"}
 
     try:
-        backup_path.rename(file_path)
+        backup_path.replace(file_path)
         return {"status": "restored", "file": str(file_path), "from_backup": str(backup_path)}
     except Exception as e:
         return {"status": "error", "message": f"Rollback failed: {e}"}
