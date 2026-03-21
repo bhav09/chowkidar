@@ -36,7 +36,9 @@ export function registerCommands(
     vscode.commands.registerCommand("chowkidar.check", cmdCheck),
     vscode.commands.registerCommand("chowkidar.report", cmdReport),
     vscode.commands.registerCommand("chowkidar.fixAll", cmdFixAll),
-    vscode.commands.registerCommand("chowkidar.refresh", cmdRefresh)
+    vscode.commands.registerCommand("chowkidar.refresh", cmdRefresh),
+    vscode.commands.registerCommand("chowkidar.muteWorkspace", cmdMuteWorkspace),
+    vscode.commands.registerCommand("chowkidar.unmuteWorkspace", cmdUnmuteWorkspace)
   );
 }
 
@@ -179,4 +181,60 @@ async function cmdRefresh(): Promise<void> {
   await refreshAllDiagnostics();
   await updateStatusBar();
   vscode.window.showInformationMessage("Chowkidar: Diagnostics refreshed.");
+}
+
+async function cmdMuteWorkspace(): Promise<void> {
+  if (!requireCli()) return;
+
+  const workspaceFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+  if (!workspaceFolder) {
+    vscode.window.showWarningMessage("No workspace folder open.");
+    return;
+  }
+
+  await vscode.window.withProgress(
+    {
+      location: vscode.ProgressLocation.Notification,
+      title: "Chowkidar: Muting Workspace…",
+      cancellable: false,
+    },
+    async () => {
+      try {
+        const { runMute } = await import("./chowkidarBridge");
+        await runMute(workspaceFolder);
+        vscode.window.showInformationMessage("Chowkidar: Workspace muted successfully.");
+        await refreshAllDiagnostics();
+      } catch (e: any) {
+        vscode.window.showErrorMessage(`Mute failed: ${e.message}`);
+      }
+    }
+  );
+}
+
+async function cmdUnmuteWorkspace(): Promise<void> {
+  if (!requireCli()) return;
+
+  const workspaceFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+  if (!workspaceFolder) {
+    vscode.window.showWarningMessage("No workspace folder open.");
+    return;
+  }
+
+  await vscode.window.withProgress(
+    {
+      location: vscode.ProgressLocation.Notification,
+      title: "Chowkidar: Unmuting Workspace…",
+      cancellable: false,
+    },
+    async () => {
+      try {
+        const { runUnmute } = await import("./chowkidarBridge");
+        await runUnmute(workspaceFolder);
+        vscode.window.showInformationMessage("Chowkidar: Workspace unmuted successfully.");
+        await refreshAllDiagnostics();
+      } catch (e: any) {
+        vscode.window.showErrorMessage(`Unmute failed: ${e.message}`);
+      }
+    }
+  );
 }

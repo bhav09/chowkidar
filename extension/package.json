@@ -2,7 +2,7 @@
   "name": "chowkidar",
   "displayName": "Chowkidar — LLM Deprecation Watchdog",
   "description": "Warns you when the AI models in your .env files are deprecated or sunsetting. Inline diagnostics, one-click fixes, cost analysis.",
-  "version": "0.2.0",
+  "version": "0.3.1",
   "publisher": "bhavishya",
   "license": "MIT",
   "engines": {
@@ -53,6 +53,14 @@
       {
         "command": "chowkidar.refresh",
         "title": "Chowkidar: Refresh Diagnostics"
+      },
+      {
+        "command": "chowkidar.muteWorkspace",
+        "title": "Chowkidar: Mute Workspace"
+      },
+      {
+        "command": "chowkidar.unmuteWorkspace",
+        "title": "Chowkidar: Unmute Workspace"
       }
     ],
     "configuration": {

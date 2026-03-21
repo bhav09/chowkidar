@@ -263,6 +263,27 @@ class Registry:
         )
         self.conn.commit()
 
+    # --- Ignored (Muted) projects ---
+
+    def mute_project(self, project_path: str) -> None:
+        self.conn.execute(
+            "INSERT OR IGNORE INTO ignored_projects (project_path) VALUES (?)",
+            (project_path,),
+        )
+        self.conn.commit()
+
+    def unmute_project(self, project_path: str) -> None:
+        self.conn.execute(
+            "DELETE FROM ignored_projects WHERE project_path = ?", (project_path,)
+        )
+        self.conn.commit()
+
+    def is_muted(self, project_path: str) -> bool:
+        row = self.conn.execute(
+            "SELECT 1 FROM ignored_projects WHERE project_path = ?", (project_path,)
+        ).fetchone()
+        return row is not None
+
     # --- Migration notes ---
 
     def add_migration_note(

@@ -75,18 +75,23 @@ def _get_config() -> Config:
 @app.command()
 def scan(
     path: Optional[str] = typer.Argument(None, help="Project directory to scan (default: CWD)"),
+    system_wide: bool = typer.Option(False, "--system-wide", help="Scan the entire user home directory for .env files"),
 ) -> None:
     """Scan a project directory for LLM model strings."""
     from .scanner import scan_directory
     from .scanner.patterns import identify_provider
 
     target = Path(path).resolve() if path else Path.cwd()
-    if not target.is_dir():
+    if not system_wide and not target.is_dir():
         console.print(f"[red]Not a directory: {target}[/red]")
         raise typer.Exit(1)
 
+    if system_wide:
+        console.print("[bold cyan]Initiating system-wide scan from User Home[/bold cyan]")
+        console.print("[dim]Ignoring massive folders (node_modules, .git, venv) to optimize speed...[/dim]")
+
     with console.status("Scanning..."):
-        result = scan_directory(target)
+        result = scan_directory(target, system_wide=system_wide)
 
     if result.total_count == 0:
         console.print(Panel("[green]No model strings found.[/green]", title="Scan Result"))
@@ -179,6 +184,12 @@ def check(
     registry.init_db()
 
     scan_result = scan_directory(target)
+
+    if registry.is_muted(str(target)):
+        if not quiet:
+            console.print("[dim]Project is muted. Skipping deprecation checks.[/dim]")
+        registry.close()
+        return
 
     if scan_result.total_count == 0:
         if not quiet:
@@ -356,6 +367,34 @@ def unwatch(path: str = typer.Argument(..., help="Project to stop watching")) ->
     registry.unwatch_project(str(target))
     registry.close()
     console.print(f"[green]✓[/green] Stopped watching: {target}")
+
+
+# --- mute / unmute ---
+
+@app.command()
+def mute(path: str = typer.Argument(..., help="Project directory to mute notifications for")) -> None:
+    """Silence deprecation notifications for a specific project permanently."""
+    from .registry.db import Registry
+
+    target = Path(path).resolve()
+    registry = Registry()
+    registry.init_db()
+    registry.mute_project(str(target))
+    console.print(f"[green]✓[/green] Muted auto-notifications for workspace: {target}")
+    registry.close()
+
+
+@app.command()
+def unmute(path: str = typer.Argument(..., help="Project directory to unmute")) -> None:
+    """Re-enable deprecation notifications for a specific project."""
+    from .registry.db import Registry
+
+    target = Path(path).resolve()
+    registry = Registry()
+    registry.init_db()
+    registry.unmute_project(str(target))
+    console.print(f"[green]✓[/green] Unmuted auto-notifications for workspace: {target}")
+    registry.close()
 
 
 # --- pin / unpin ---

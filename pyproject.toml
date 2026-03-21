@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "chowkidar"
-version = "0.2.0"
+version = "0.3.1"
 description = "Local-first LLM model deprecation watchdog — scans your configs, alerts on sunsets, and instructs your IDE to update."
 readme = "README.md"
 license = { text = "MIT" }

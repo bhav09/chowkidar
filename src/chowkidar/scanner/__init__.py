@@ -75,13 +75,18 @@ def _normalize_with_framework(model_value: str) -> str:
     return normalize_model_id(model_value)
 
 
-def scan_directory(directory: str | Path) -> ScanResult:
+def scan_directory(directory: str | Path, system_wide: bool = False) -> ScanResult:
     """Scan a project directory for all model strings."""
     directory = Path(directory).resolve()
     result = ScanResult(project_path=str(directory))
 
-    env_files = discover_env_files(directory)
-    config_files = discover_config_files(directory)
+    if system_wide:
+        from .env_parser import discover_system_env_files
+        env_files = discover_system_env_files()
+        config_files = {"yaml": [], "toml": [], "json": [], "source": []}
+    else:
+        env_files = discover_env_files(directory)
+        config_files = discover_config_files(directory)
 
     with ThreadPoolExecutor() as executor:
         # Schedule pure env files

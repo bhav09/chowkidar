@@ -201,3 +201,13 @@ export async function runSetup(): Promise<string> {
   const result = await runCommand(["setup", "--skip-slm"]);
   return result.stdout + result.stderr;
 }
+
+export async function runMute(projectPath: string): Promise<string> {
+  const result = await runCommand(["mute", projectPath]);
+  return result.stdout;
+}
+
+export async function runUnmute(projectPath: string): Promise<string> {
+  const result = await runCommand(["unmute", projectPath]);
+  return result.stdout;
+}

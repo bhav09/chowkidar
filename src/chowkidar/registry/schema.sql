@@ -43,6 +43,11 @@ CREATE TABLE IF NOT EXISTS watched_projects (
     last_scanned_at TEXT
 );
 
+CREATE TABLE IF NOT EXISTS ignored_projects (
+    project_path TEXT PRIMARY KEY,
+    added_at TEXT DEFAULT (datetime('now'))
+);
+
 CREATE INDEX IF NOT EXISTS idx_scan_project ON scan_results(project_path);
 CREATE INDEX IF NOT EXISTS idx_scan_model ON scan_results(model_id);
 CREATE INDEX IF NOT EXISTS idx_notif_project_model ON notification_log(project_path, model_id);

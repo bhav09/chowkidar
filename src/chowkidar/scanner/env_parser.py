@@ -97,3 +97,27 @@ def discover_env_files(directory: Path) -> list[Path]:
                 env_files.append(f)
 
     return env_files
+
+
+def discover_system_env_files() -> list[Path]:
+    import os
+    
+    home = Path.home()
+    env_files: list[Path] = []
+    
+    ignore_dirs = {
+        "node_modules", ".git", ".idea", ".vscode", "venv", ".venv", 
+        "env", "build", "dist", "coverage", "vendor", "AppData", "Library", "Windows"
+    }
+
+    for root, dirs, files in os.walk(str(home)):
+        # Modify dirs in-place to prune the walk map and prevent deep recursion timeouts
+        dirs[:] = [d for d in dirs if d not in ignore_dirs and not d.startswith(".")]
+        
+        for file in files:
+            if file.startswith(".env"):
+                p = Path(root) / file
+                if _is_valid_env_file(p):
+                    env_files.append(p)
+
+    return env_files

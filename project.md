@@ -2,20 +2,22 @@
 
 # Chowkidar — Enhanced Task Brief (ETB)
 
-## Pre-Execution Protocol: ETB Mandatory Fields for v0.2.0 (Testing, Optimization, Expansion & Release)
+# Chowkidar — Enhanced Task Brief (ETB)
 
-* **User Goal:** Comprehensively test the application (unit, integration, E2E), identify and fix bugs, optimize UX/execution time, add robust logical features, and bump versions across GitHub, PyPI, and VS Code Marketplace.
-* **Mode:** [Production] As a Staff SDE, executing a major version bump (v0.2.0) requires exhaustive validation. The focus is on resilience, speed, zero-downtime, and comprehensive cross-platform distribution.
-* **Code Grounding:** `tests/`, `src/chowkidar/`, `extension/`, `pyproject.toml`, `extension/package.json`
-* **Dependency Check:** Python caching tools (`diskcache` or `functools.lru_cache`) might be necessary for optimization.
+## Pre-Execution Protocol: ETB Mandatory Fields for v0.3.0 (System-Wide Scan & Project Muting)
+
+* **User Goal:** Implement system-wide project scanning across the entire laptop/workstation and introduce a feature to snooze/silence notifications for specific projects (in both the CLI and VS Code extension). Ensure robust cross-platform testing.
+* **Mode:** [Production] Global system `.env` scanning can be intensely resource-heavy and must be implemented safely with strict exclusions. Project-level muting must integrate correctly with the existing SQLite registry.
+* **Code Grounding:** `src/chowkidar/cli.py`, `src/chowkidar/scanner/`, `src/chowkidar/registry/db.py`, `extension/src/extension.ts`
+* **Dependency Check:** Python standard library (`pathlib`, `os.walk`) alongside the multithreaded scanner is sufficient. 
 * **The "Safety Audit":**
-  * *Production:* Ensure that new features (like caching or automated suggestions) do not introduce Race Conditions or bloat the sync time. Test the CLI concurrently. Verify `.vsix` build doesn't bundle unnecessary large assets.
+  * *Production:* System-wide scanning **must** avoid `node_modules`, `.git`, `venv`, and `Windows` system folders to prevent memory exhaustion and infinite loops. We will implement smart depth/ignore filters. Project snoozing must ensure no notifications trigger for the ignored path.
 * **Step-by-Step Plan:**
-  1. **Comprehensive Validation:** Run `pytest` (unit/integration) and CLI subprocesses (E2E). Address any bugs found immediately.
-  2. **Optimization:** Implement caching for the `sync` scraper and local registry to drastically reduce `chowkidar sync` execution time and minimize provider API hitting.
-  3. **Feature Addition:** Introduce a "cost/speed aware" successor recommendation logic or parallelize the `scan` across large directories using `ThreadPoolExecutor` to dramatically improve UX on massive mono-repos.
-  4. **Version Bumping:** Update `pyproject.toml` and `package.json` to version `0.2.0`.
-  5. **Distribution:** Build and securely push to GitHub (git push), PyPI (`twine`), and package the new `.vsix` (`vsce`).
+  1. **Registry Update:** Add `is_muted` or `snoozed_until` columns to the `watched_projects` SQLite table or create an `ignored_projects` table.
+  2. **Python Engine Implementation:** Add the `chowkidar scan --system-wide` flag utilizing a filtered recursive walk from the User Home directory, parsing isolated `.env` files. Implement `chowkidar mute <path>` and `chowkidar unmute <path>` CLI commands.
+  3. **VS Code Extension Integration:** Expose "Chowkidar: Mute Workspace" and "Chowkidar: Unmute Workspace" commands in `extension.ts` connecting to the SQLite registry.
+  4. **Exhaustive Testing:** Run newly added PyTest variants for the system scanner (mocked to prevent full drive scans during test) and project muting. Test end-to-end functionality via CLI.
+  5. **Distribution:** Bump to v0.3.0 and finalize deployments.
 
 ## Status: AWAITING APPROVAL
 

@@ -43,6 +43,8 @@ exports.runCheckQuiet = runCheckQuiet;
 exports.runFixSingle = runFixSingle;
 exports.runFix = runFix;
 exports.runSetup = runSetup;
+exports.runMute = runMute;
+exports.runUnmute = runUnmute;
 const cp = __importStar(require("child_process"));
 const vscode = __importStar(require("vscode"));
 const path = __importStar(require("path"));
@@ -166,5 +168,13 @@ async function runFix(projectPath) {
 async function runSetup() {
     const result = await runCommand(["setup", "--skip-slm"]);
     return result.stdout + result.stderr;
+}
+async function runMute(projectPath) {
+    const result = await runCommand(["mute", projectPath]);
+    return result.stdout;
+}
+async function runUnmute(projectPath) {
+    const result = await runCommand(["unmute", projectPath]);
+    return result.stdout;
 }
 //# sourceMappingURL=chowkidarBridge.js.map
