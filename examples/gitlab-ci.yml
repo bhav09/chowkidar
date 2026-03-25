@@ -1,0 +1,10 @@
+deprecation-gate:
+  image: python:3.11-slim
+  stage: test
+  script:
+    - pip install chowkidar
+    - chowkidar sync
+    - chowkidar gate . --format json --severity block-sunset
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH == "main"'
