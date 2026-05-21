@@ -158,11 +158,16 @@ def full_setup(skip_slm: bool = False) -> tuple[bool, str]:
     if not ensure_ollama_running():
         return False, "Ollama installed but could not start. Run 'ollama serve' manually."
 
-    model = config.get("slm_model", "gemma3:1b")
+    from .selector import select_best_slm
+    model, reason = select_best_slm(config)
+    logger.info("SLM Selection: %s", reason)
+    config.set("slm_model", model)
+    config.save()
+
     if not check_model_available(model):
         if not pull_model(model):
             return False, f"Failed to pull model '{model}'. Check your internet connection."
 
     config.set("slm_enabled", True)
     config.save()
-    return True, f"SLM setup complete. Model '{model}' is ready."
+    return True, f"SLM setup complete. {reason}. Model '{model}' is ready."

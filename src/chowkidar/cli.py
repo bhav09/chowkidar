@@ -659,19 +659,90 @@ def update(
 
 @slm_app.command(name="status")
 def slm_status() -> None:
-    """Check if Ollama is running and the SLM model is available."""
+    """Check the status of Ollama, hardware resource allocation, and the selected SLM model."""
+    from .slm.client import SLMClient
+    from .slm.selector import get_system_ram_gb, get_free_disk_gb, select_best_slm
+
+    config = _get_config()
+    client = SLMClient(config)
+    
+    console.print("[bold]Local SLM Diagnostics:[/bold]")
+    
+    ram = get_system_ram_gb()
+    disk = get_free_disk_gb()
+    console.print(f"  System RAM: {ram:.1f} GB")
+    console.print(f"  Free Disk space: {disk:.1f} GB")
+    
+    selected_model, select_reason = select_best_slm(config)
+    console.print(f"  Recommended Model: [green]{selected_model}[/green] ({select_reason})")
+    
+    success, message = client.test_connection()
+    if success:
+        console.print(f"  Ollama Status: [green]✓ {message}[/green]")
+    else:
+        console.print(f"  Ollama Status: [yellow]⚠ {message}[/yellow]")
+
+    console.print(f"  SLM enabled: {config.get('slm_enabled', False)}")
+    console.print(f"  Current Model: {config.get('slm_model', 'gemma3:1b')}")
+    console.print("  Auto-unload: [green]enabled[/green] (Memory is reclaimed immediately after generation)")
+
+
+@slm_app.command(name="choose")
+def slm_choose(
+    auto_pull: bool = typer.Option(True, "--pull/--no-pull", help="Automatically pull the model if missing"),
+) -> None:
+    """Analyze system hardware and choose/pull the best small local model for the machine."""
+    from .slm.selector import select_best_slm
+    from .slm.setup import check_model_available, pull_model, ensure_ollama_running
+
+    config = _get_config()
+    
+    console.print("[yellow]Analyzing hardware configuration...[/yellow]")
+    model, reason = select_best_slm(config)
+    
+    console.print(f"\n[bold green]Recommended SLM profile choice:[/bold green]")
+    console.print(f"  • Model: [cyan]{model}[/cyan]")
+    console.print(f"  • Reason: {reason}")
+    
+    confirm = typer.confirm(f"\nDo you want to configure Chowkidar to use '{model}'?", default=True)
+    if not confirm:
+        console.print("[yellow]Cancelled.[/yellow]")
+        return
+        
+    config.set("slm_model", model)
+    config.set("slm_enabled", True)
+    config.save()
+    console.print(f"[green]✓ Configured slm_model = {model}[/green]")
+
+    if not ensure_ollama_running():
+        console.print("[red]✗ Ollama server is not running and could not be started automatically. Run 'ollama serve' first.[/red]")
+        return
+
+    if not check_model_available(model):
+        if auto_pull:
+            console.print(f"[yellow]Pulling model '{model}'... This can take several minutes. Please wait...[/yellow]")
+            if pull_model(model):
+                console.print(f"[green]✓ Successfully pulled and loaded model '{model}'![/green]")
+            else:
+                console.print(f"[red]✗ Failed to pull model '{model}'. Try running 'ollama pull {model}' manually.[/red]")
+        else:
+            console.print(f"[yellow]Please run 'ollama pull {model}' manually before using SLM features.[/yellow]")
+    else:
+        console.print(f"[green]✓ Model '{model}' is already available locally and ready![/green]")
+
+
+@slm_app.command(name="unload")
+def slm_unload() -> None:
+    """Forcefully unload the currently configured local SLM model from Ollama memory to reclaim RAM."""
     from .slm.client import SLMClient
 
     config = _get_config()
     client = SLMClient(config)
-    success, message = client.test_connection()
-    if success:
-        console.print(f"[green]✓[/green] {message}")
+    console.print(f"[yellow]Requesting Ollama to unload model '{client.model}'...[/yellow]")
+    if client.unload_model():
+        console.print(f"[green]✓ Model '{client.model}' successfully unloaded from memory.[/green]")
     else:
-        console.print(f"[yellow]⚠[/yellow] {message}")
-
-    console.print(f"  SLM enabled: {config.get('slm_enabled', False)}")
-    console.print(f"  Model: {config.get('slm_model', 'gemma3:1b')}")
+        console.print("[red]✗ Failed to request model unload. Verify Ollama is running.[/red]")
 
 
 # --- rules subcommands ---
@@ -1145,16 +1216,16 @@ def test_migration(
 
 @app.command(name="test-notify")
 def test_notify() -> None:
-    """Send a test desktop notification to verify setup and permissions."""
+    """Send a test folder-level summary desktop notification to verify setup, permissions, and layout formatting."""
     from .sentinel.notifier import notify
 
-    title = "Chowkidar Notification Test"
-    message = "If you see this, Chowkidar's cross-platform native notification system is functioning perfectly!"
+    title = "Chowkidar: test-project has 2 expiring model(s)"
+    message = "gpt-3.5-turbo (expired) -> gpt-4o-mini, claude-2.1 (14d) -> claude-3-haiku. Smart advisory rules generated for IDE assistant."
     
-    console.print("[yellow]Sending test notification...[/yellow]")
+    console.print("[yellow]Sending test consolidated folder notification...[/yellow]")
     success = notify(title, message, urgency="critical")
     if success:
-        console.print("[green]✓ Test notification sent successfully![/green]")
+        console.print("[green]✓ Test folder notification sent successfully![/green]")
         console.print("[dim]If you didn't see a banner, check your OS notifications settings to ensure Chowkidar is permitted.[/dim]")
     else:
         console.print("[red]✗ Failed to send test notification.[/red]")

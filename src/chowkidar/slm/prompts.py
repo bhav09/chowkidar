@@ -93,6 +93,62 @@ def parse_slm_response(response: str) -> list[dict[str, str | None]] | None:
     return validated if validated else None
 
 
+ADVISORY_PROMPT = """\
+You are an expert AI models and LLMOps advisor. \
+Given a list of expiring or legacy AI models used in a software project, analyze their usage context (based on variable names, file names, and current model types) and recommend the best modern, cost-optimized, and capability-matched replacements.
+
+Input Context:
+{context_json}
+
+Your goal:
+For each used model, infer its purpose, analyze the best successor, and output structured recommendations.
+Consider:
+- Cost: Prefer modern cheaper models (e.g. gpt-4o-mini is 60%+ cheaper than gpt-3.5-turbo, claude-3-haiku is much cheaper than claude-2.1).
+- Context size and capabilities: Ensure replacement has similar or better context size, tool use, JSON support, or vision support if the variable/model suggests it.
+- Risk/confidence level.
+
+Return a JSON object with a single "advisory" key containing a list of objects. Each object must have:
+- "variable": (string) the variable name from input
+- "file": (string) the file path from input
+- "model": (string) the current model from input
+- "purpose": (string) inferred purpose of the model (e.g. "chat completion", "embeddings", "vision task", "fallback")
+- "recommended_model": (string) the primary recommended replacement model ID
+- "confidence": (string) "high", "medium", or "low"
+- "reason": (string) concise reason for this specific choice, mentioning cost/speed/capability benefits
+- "risk": (string) concise risk notes (e.g. "losses JSON mode support", "smaller context window", "requires manual review of prompt templates")
+
+Return ONLY the raw JSON object. Do not include any markdown fences or conversational preambles.
+"""
+
+
+def format_advisory_prompt(context: dict) -> str:
+    """Format the advisory prompt with the given project/model context."""
+    context_json = json.dumps(context, indent=2)
+    return ADVISORY_PROMPT.format(context_json=context_json)
+
+
+def parse_advisory_response(response: str) -> dict | None:
+    """Parse and validate the SLM's advisory JSON response."""
+    response = response.strip()
+
+    # Strip any potential markdown code blocks if the model ignored instructions
+    json_match = re.search(r"\{.*\}", response, re.DOTALL)
+    if json_match:
+        response = json_match.group()
+
+    try:
+        data = json.loads(response)
+    except json.JSONDecodeError:
+        logger.warning("SLM response is not valid JSON: %s", response[:200])
+        return None
+
+    if not isinstance(data, dict) or "advisory" not in data:
+        logger.warning("SLM response is not a valid advisory dictionary")
+        return None
+
+    return data
+
+
 def _is_valid_date(date_str: str) -> bool:
     try:
         dt = datetime.strptime(date_str, "%Y-%m-%d")

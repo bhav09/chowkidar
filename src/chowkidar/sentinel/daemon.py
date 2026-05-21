@@ -12,6 +12,7 @@ from pathlib import Path
 
 import schedule
 
+from ..advisor import get_project_advisory
 from ..config import CHOWKIDAR_HOME, Config
 from ..ide.rules_writer import write_rules_for_project
 from ..providers.anthropic_provider import AnthropicProvider
@@ -136,7 +137,7 @@ class ChowkidarDaemon:
                 logger.error("Error checking project %s: %s", project_path, e)
 
     def _check_project(self, project_path: str) -> None:
-        """Scan a project and fire notifications for deprecated models."""
+        """Scan a project and fire a consolidated folder-level notification for deprecated models."""
         logger.info("Scanning project: %s", project_path)
         scan_result = scan_directory(project_path)
 
@@ -145,14 +146,15 @@ class ChowkidarDaemon:
 
         self.registry.save_scan_results(project_path, scan_result.all_models)
 
-        deprecations_found: list[dict] = []
+        expiring_models: list[dict] = []
+        max_days = -999999
+        max_threshold = "90d"
 
+        # Determine which scanned models are actually expiring and calculate days/thresholds
         for model_info in scan_result.all_models:
             canonical = model_info["canonical"]
 
-            if self.registry.is_pinned(canonical):
-                continue
-            if self.registry.is_snoozed(canonical):
+            if self.registry.is_pinned(canonical) or self.registry.is_snoozed(canonical):
                 continue
 
             model_record = self.registry.get_model(canonical)
@@ -171,13 +173,13 @@ class ChowkidarDaemon:
                 continue
 
             threshold = self._determine_threshold(days_until)
-            cooldown = self.config.get("notification_cooldown_hours", 24)
+            
+            # Map threshold to precedence for overall project severity
+            threshold_precedence = {"sunset": 4, "7d": 3, "30d": 2, "90d": 1}
+            if threshold_precedence.get(threshold, 0) > threshold_precedence.get(max_threshold, 0):
+                max_threshold = threshold
 
-            if not self.registry.is_recently_notified(project_path, canonical, threshold, cooldown):
-                self._send_notification(model_info, model_record, days_until, threshold, project_path)
-                self.registry.log_notification(project_path, canonical, threshold)
-
-            deprecations_found.append({
+            expiring_models.append({
                 "variable": model_info["variable"],
                 "file": model_info["file"],
                 "model": model_info["model"],
@@ -187,11 +189,37 @@ class ChowkidarDaemon:
                 "replacement_confidence": model_record.replacement_confidence,
                 "breaking_changes": model_record.breaking_changes,
                 "days_until": days_until,
+                "threshold": threshold,
             })
 
-        if deprecations_found and self.config.get("write_rules", True):
+        if not expiring_models:
+            return
+
+        # Generate the context-aware advisor recommendations (utilizes local Gemma/heuristics + cache)
+        advisory = get_project_advisory(project_path, expiring_models, self.registry, self.config)
+
+        #Consolidated notification cooldown logic per project folder at the highest threshold
+        cooldown = self.config.get("notification_cooldown_hours", 24)
+        if not self.registry.is_recently_notified(project_path, "folder_summary", max_threshold, cooldown):
+            self._send_folder_notification(project_path, expiring_models, advisory, max_threshold)
+            self.registry.log_notification(project_path, "folder_summary", max_threshold)
+
+        # Write IDE rules file utilizing the enriched advisor recommendations
+        if self.config.get("write_rules", True):
             try:
-                write_rules_for_project(Path(project_path), deprecations_found, self.config)
+                # Merge advisory suggestions into deprecations list for rule generation
+                advisory_by_var = {adv["variable"]: adv for adv in advisory}
+                enriched_deprecations = []
+                for dep in expiring_models:
+                    adv = advisory_by_var.get(dep["variable"], {})
+                    enriched_dep = dict(dep)
+                    enriched_dep["purpose"] = adv.get("purpose")
+                    enriched_dep["recommended_model"] = adv.get("recommended_model")
+                    enriched_dep["reason"] = adv.get("reason")
+                    enriched_dep["risk"] = adv.get("risk")
+                    enriched_deprecations.append(enriched_dep)
+
+                write_rules_for_project(Path(project_path), enriched_deprecations, self.config)
             except Exception as e:
                 logger.error("Failed to write IDE rules for %s: %s", project_path, e)
 
@@ -207,41 +235,52 @@ class ChowkidarDaemon:
             return "90d"
 
     @staticmethod
-    def _send_notification(
-        model_info: dict, model_record, days_until: int, threshold: str, project_path: str,
+    def _send_folder_notification(
+        project_path: str, expiring_models: list[dict], advisory: list[dict], max_threshold: str
     ) -> None:
         project_name = Path(project_path).name
-        model_name = model_info["model"]
-        variable = model_info["variable"]
+        count = len(expiring_models)
 
-        if threshold == "sunset":
-            urgency = "critical"
-            title = f"MODEL SUNSET: {model_name}"
-            message = (
-                f"'{model_name}' in {project_name} ({variable}) has reached its sunset date! "
-                f"Replace with: {model_record.replacement or 'check provider docs'}"
-            )
-        elif threshold == "7d":
-            urgency = "critical"
-            title = f"Model sunset in {days_until}d: {model_name}"
-            message = (
-                f"'{model_name}' in {project_name} ({variable}) sunsets in {days_until} days. "
-                f"Replace with: {model_record.replacement or 'check provider docs'}"
-            )
-        elif threshold == "30d":
-            urgency = "normal"
-            title = f"Model sunsetting: {model_name}"
-            message = (
-                f"'{model_name}' in {project_name} ({variable}) sunsets in {days_until} days. "
-                f"Consider switching to: {model_record.replacement or 'a newer model'}"
-            )
-        else:
-            urgency = "low"
-            title = f"Model deprecation notice: {model_name}"
-            message = f"'{model_name}' in {project_name} will sunset in {days_until} days."
+        # Map overall threshold to native OS notification urgency levels
+        urgency_map = {"sunset": "critical", "7d": "critical", "30d": "normal", "90d": "low"}
+        urgency = urgency_map.get(max_threshold, "normal")
 
+        # Create structured, descriptive notification title
+        title = f"Chowkidar: {project_name} has {count} expiring model(s)"
+        if max_threshold == "sunset":
+            title = f"ALERT: Sunset Models in {project_name} ({count} models)"
+
+        # Sort expiring models by urgency (expired / lowest days_until first)
+        sorted_expiring = sorted(expiring_models, key=lambda x: x["days_until"])
+        
+        # Build concise model summary items for OS toast limits
+        message_parts = []
+        advisory_by_var = {adv["variable"]: adv for adv in advisory}
+
+        for m in sorted_expiring[:3]:  # display top 3 models max in OS toast
+            days = m["days_until"]
+            model_name = m["model"]
+            var_name = m["variable"]
+            adv = advisory_by_var.get(var_name, {})
+            rec = adv.get("recommended_model") or m["replacement"] or "check docs"
+            
+            if days <= 0:
+                time_str = "expired"
+            else:
+                time_str = f"{days}d"
+            
+            message_parts.append(f"{model_name} ({time_str}) -> {rec.split('/')[-1]}")
+
+        message = ", ".join(message_parts)
+        if count > 3:
+            message += f" (+ {count - 3} more)"
+            
+        message += ". Full local advisory rules generated for IDE assistant."
+
+        # Send native OS notification toast
         notify(title, message, urgency)
 
+        # Notify via configured webhook URL
         webhook_url = ChowkidarDaemon._get_webhook_url()
         if webhook_url:
             webhook_fmt = "generic"

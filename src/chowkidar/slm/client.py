@@ -67,6 +67,49 @@ class SLMClient:
             logger.warning("SLM extraction failed: %s", e)
             return None
 
+    def advise_replacements(self, context: dict) -> dict | None:
+        """Use the local SLM to generate context-aware replacement recommendations.
+
+        Returns None if SLM is unavailable or recommendation fails.
+        """
+        if not self.config.get("slm_enabled", False):
+            return None
+
+        ollama = _get_ollama()
+        if ollama is None:
+            logger.debug("Ollama package not installed, skipping SLM advice")
+            return None
+
+        from .prompts import format_advisory_prompt, parse_advisory_response
+        prompt = format_advisory_prompt(context)
+
+        try:
+            response = ollama.generate(
+                model=self.model,
+                prompt=prompt,
+                options={"temperature": 0.1, "num_predict": 4096},
+                keep_alive=0,  # Auto-unload after generation completes
+            )
+            raw_response = response.get("response", "") if isinstance(response, dict) else response.response
+            logger.debug("SLM advisory raw response: %s", raw_response[:500])
+            return parse_advisory_response(raw_response)
+        except Exception as e:
+            logger.warning("SLM advisory generation failed: %s", e)
+            return None
+
+    def unload_model(self) -> bool:
+        """Explicitly unload the configured local SLM model from Ollama's memory."""
+        ollama = _get_ollama()
+        if ollama is None:
+            return False
+        try:
+            ollama.generate(model=self.model, prompt="", keep_alive=0)
+            logger.info("Successfully requested unload of SLM model '%s'", self.model)
+            return True
+        except Exception as e:
+            logger.debug("Failed to unload model %s: %s", self.model, e)
+            return False
+
     def test_connection(self) -> tuple[bool, str]:
         """Test SLM connectivity and return (success, message)."""
         ollama = _get_ollama()
