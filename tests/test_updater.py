@@ -4,6 +4,7 @@
 import pytest
 
 from chowkidar.updater.env_writer import rollback_env, update_env_value
+from chowkidar.updater.structured_writer import update_model_reference
 
 
 @pytest.fixture
@@ -77,4 +78,42 @@ class TestRollback:
 
     def test_rollback_no_backup(self, env_file):
         result = rollback_env(env_file)
+        assert result["status"] == "error"
+
+
+class TestStructuredWriter:
+    def test_update_json_value(self, tmp_path):
+        path = tmp_path / "config.json"
+        path.write_text('{"llm": {"model": "gpt-3.5-turbo"}}')
+
+        result = update_model_reference(path, "llm.model", "gpt-4o-mini")
+
+        assert result["status"] == "updated"
+        assert '"model": "gpt-4o-mini"' in path.read_text()
+        assert (tmp_path / "config.json.chowkidar.bak").exists()
+
+    def test_update_yaml_value(self, tmp_path):
+        path = tmp_path / "config.yaml"
+        path.write_text("llm:\n  model: gpt-3.5-turbo\n")
+
+        result = update_model_reference(path, "llm.model", "gpt-4o-mini")
+
+        assert result["status"] == "updated"
+        assert "model: gpt-4o-mini" in path.read_text()
+
+    def test_update_toml_value(self, tmp_path):
+        path = tmp_path / "settings.toml"
+        path.write_text('[llm]\nmodel = "gpt-3.5-turbo"\n')
+
+        result = update_model_reference(path, "llm.model", "gpt-4o-mini")
+
+        assert result["status"] == "updated"
+        assert 'model = "gpt-4o-mini"' in path.read_text()
+
+    def test_refuses_source_line_path(self, tmp_path):
+        path = tmp_path / "config.json"
+        path.write_text('{"model": "gpt-3.5-turbo"}')
+
+        result = update_model_reference(path, "L12", "gpt-4o-mini")
+
         assert result["status"] == "error"

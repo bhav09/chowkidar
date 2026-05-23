@@ -77,10 +77,65 @@ class TestNotifications:
         registry.log_notification("/proj", "openai/gpt-3.5-turbo", "30d")
         assert registry.is_recently_notified("/proj", "openai/gpt-3.5-turbo", "30d")
 
+    def test_log_and_check_per_reference(self, registry):
+        registry.log_notification(
+            "/proj",
+            "openai/gpt-3.5-turbo",
+            "7d",
+            file_path="/proj/config.yaml",
+            variable_name="llm.model",
+        )
+        assert registry.is_recently_notified(
+            "/proj",
+            "openai/gpt-3.5-turbo",
+            "7d",
+            file_path="/proj/config.yaml",
+            variable_name="llm.model",
+        )
+        assert not registry.is_recently_notified(
+            "/proj",
+            "openai/gpt-3.5-turbo",
+            "7d",
+            file_path="/proj/other.yaml",
+            variable_name="llm.model",
+        )
+
+    def test_failed_notification_does_not_count_as_recent(self, registry):
+        registry.log_notification(
+            "/proj",
+            "openai/gpt-3.5-turbo",
+            "30d",
+            delivery_status="failed",
+            error="toast failed",
+        )
+        assert not registry.is_recently_notified("/proj", "openai/gpt-3.5-turbo", "30d")
+
     def test_snooze(self, registry):
         assert not registry.is_snoozed("openai/gpt-3.5-turbo")
         registry.set_snooze("openai/gpt-3.5-turbo", 7)
         assert registry.is_snoozed("openai/gpt-3.5-turbo")
+
+
+class TestActionAudit:
+    def test_log_and_read_action(self, registry):
+        registry.log_action(
+            "/proj",
+            "local_write",
+            "json",
+            "updated",
+            target_path="/proj/config.json",
+            variable_name="llm.model",
+            model_id="openai/gpt-3.5-turbo",
+            old_value="gpt-3.5-turbo",
+            new_value="gpt-4o-mini",
+            metadata={"backup": "/proj/config.json.chowkidar.bak"},
+        )
+
+        actions = registry.get_action_audit("/proj")
+        assert len(actions) == 1
+        assert actions[0]["action_type"] == "local_write"
+        assert actions[0]["target_type"] == "json"
+        assert actions[0]["metadata"]["backup"] == "/proj/config.json.chowkidar.bak"
 
 
 class TestScanResults:

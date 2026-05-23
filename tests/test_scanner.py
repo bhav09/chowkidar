@@ -94,6 +94,27 @@ class TestEnvParser:
         env_names = {f.name for f in files}
         assert "sample.env" not in env_names  # named sample.env, not .env
 
+    def test_alternative_env_files(self, tmp_path):
+        from chowkidar.scanner.env_parser import discover_env_files, parse_env_file
+
+        # Create alternative env filenames
+        f1 = tmp_path / ".env.development.local"
+        f1.write_text("OPENAI_MODEL=gpt-4o\n")
+        f2 = tmp_path / ".envrc"
+        f2.write_text("export OPENAI_MODEL=gpt-3.5-turbo\n")
+        f3 = tmp_path / ".flaskenv"
+        f3.write_text("OPENAI_MODEL=claude-3-sonnet-20240229\n")
+
+        found_files = discover_env_files(tmp_path)
+        found_names = {f.name for f in found_files}
+        assert ".env.development.local" in found_names
+        assert ".envrc" in found_names
+        assert ".flaskenv" in found_names
+
+        entries = parse_env_file(f2)
+        assert len(entries) == 1
+        assert entries[0].model_value == "gpt-3.5-turbo"
+
 
 class TestConfigParser:
     def test_parse_yaml(self):
@@ -120,6 +141,23 @@ class TestConfigParser:
         key_paths = {e.key_path for e in entries}
         assert "llm.model" in key_paths
         assert "anthropic.model" in key_paths
+
+    def test_shell_script_and_unquoted_models(self, tmp_path):
+        from chowkidar.scanner.config_parser import discover_config_files, parse_source_file
+
+        sh_file = tmp_path / "deploy.sh"
+        sh_file.write_text(
+            'export MODEL_NAME="gpt-4o-mini"\n'
+            'export UNQUOTED_MODEL=claude-3-sonnet-20240229\n'
+        )
+
+        found_configs = discover_config_files(tmp_path)
+        assert sh_file in found_configs["source"]
+
+        entries = parse_source_file(sh_file)
+        models = {e.model_value for e in entries}
+        assert "gpt-4o-mini" in models
+        assert "claude-3-sonnet-20240229" in models
 
 
 class TestScanDirectory:

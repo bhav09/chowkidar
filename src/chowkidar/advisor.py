@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from .config import CHOWKIDAR_HOME, Config
+from .recommendations import build_recommendation
 from .registry.db import Registry
 from .slm.client import SLMClient
 
@@ -169,32 +170,37 @@ def generate_local_advice(models: list[dict[str, str]], registry: Registry) -> l
 
         purpose = infer_purpose_heuristically(variable, canonical)
 
-        # Check if the registry already has an official replacement
         record = registry.get_model(canonical)
-        if record and record.sunset_date and record.replacement:
-            rec_model = record.replacement
-            confidence = record.replacement_confidence
-            reason = f"Official provider-recommended successor to {m['model']}. "
-            # Append local pricing cost benefit if available
-            from .pricing import compare_cost
-            cost_comp = compare_cost(canonical, rec_model)
-            if cost_comp:
-                reason += f"Migration {cost_comp.summary}."
-            risk = "Verify that the replacement model fits your requirements."
-        else:
-            rec_model, confidence, reason = get_fallback_recommendation(canonical)
-            risk = "Generic capability matched recommendation. Review before production use."
+        fallback = None if record and record.sunset_date and record.replacement else get_fallback_recommendation(canonical)
+        recommendation = build_recommendation(canonical, record, fallback)
+        rec_model = recommendation.recommended_model
+        confidence = recommendation.confidence
+        reason = recommendation.reason
+        if recommendation.cost_summary:
+            reason = f"{reason} Migration {recommendation.cost_summary}."
+        risk_parts = [recommendation.risk]
+        risk_parts.extend(recommendation.commercial_risks)
+        risk_parts.extend(recommendation.future_risks)
+        risk_parts.extend(recommendation.privacy_risks)
+        risk = " ".join(risk_parts)
 
         advice_list.append({
             "variable": variable,
             "file": file_name,
             "model": m["model"],
             "purpose": purpose,
-            "recommended_model": rec_model.split("/")[-1] if "/" in rec_model else rec_model,
+            "recommended_model": rec_model.split("/")[-1] if rec_model and "/" in rec_model else rec_model,
+            "recommended_model_canonical": rec_model,
             "confidence": confidence,
             "reason": reason,
             "risk": risk,
-            "source_type": m.get("source_type", "env")
+            "source_type": m.get("source_type", "env"),
+            "manual_review_required": recommendation.manual_review_required,
+            "auto_write_allowed": recommendation.auto_write_allowed,
+            "capability_diffs": recommendation.capability_diffs,
+            "commercial_risks": recommendation.commercial_risks,
+            "future_risks": recommendation.future_risks,
+            "privacy_risks": recommendation.privacy_risks,
         })
     return advice_list
 
@@ -268,8 +274,8 @@ def get_project_advisory(
                         enriched_item = dict(local_item)
                         if slm_item.get("purpose"):
                             enriched_item["purpose"] = slm_item["purpose"]
-                        if slm_item.get("recommended_model"):
-                            enriched_item["recommended_model"] = slm_item["recommended_model"]
+                        # The local SLM may enrich rationale, but replacement IDs stay on
+                        # the deterministic, capability-validated baseline.
                         if slm_item.get("confidence") in ("high", "medium", "low"):
                             enriched_item["confidence"] = slm_item["confidence"]
                         if slm_item.get("reason"):

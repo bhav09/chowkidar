@@ -48,6 +48,9 @@ def test_html_report(project_with_env, registry):
     assert "<html" in report
     assert "gpt-3.5-turbo" in report
     assert "Chowkidar" in report
+    assert "highlight-var" in report
+    assert "highlight-model" in report
+    assert "Open in Editor" in report
 
 
 def test_report_empty_project(tmp_path, registry):

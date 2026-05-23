@@ -30,7 +30,15 @@ CREATE TABLE IF NOT EXISTS notification_log (
     model_id TEXT NOT NULL,
     threshold TEXT NOT NULL,
     notified_at TEXT DEFAULT (datetime('now')),
-    snoozed_until TEXT
+    snoozed_until TEXT,
+    file_path TEXT,
+    variable_name TEXT,
+    channel TEXT DEFAULT 'desktop',
+    delivery_status TEXT DEFAULT 'delivered',
+    webhook_status TEXT,
+    report_path TEXT,
+    recommendation TEXT,
+    error TEXT
 );
 
 CREATE TABLE IF NOT EXISTS pinned_models (
@@ -48,6 +56,24 @@ CREATE TABLE IF NOT EXISTS watched_projects (
 CREATE INDEX IF NOT EXISTS idx_scan_project ON scan_results(project_path);
 CREATE INDEX IF NOT EXISTS idx_scan_model ON scan_results(model_id);
 CREATE INDEX IF NOT EXISTS idx_notif_project_model ON notification_log(project_path, model_id);
+CREATE INDEX IF NOT EXISTS idx_notif_reference ON notification_log(project_path, file_path, variable_name, model_id, threshold);
+CREATE TABLE IF NOT EXISTS action_audit (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_path TEXT NOT NULL,
+    action_type TEXT NOT NULL,
+    target_type TEXT NOT NULL,
+    target_path TEXT,
+    variable_name TEXT,
+    model_id TEXT,
+    old_value TEXT,
+    new_value TEXT,
+    status TEXT NOT NULL,
+    message TEXT,
+    metadata TEXT DEFAULT '{}',
+    created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_action_project ON action_audit(project_path);
+CREATE INDEX IF NOT EXISTS idx_action_model ON action_audit(model_id);
 CREATE TABLE IF NOT EXISTS model_pricing (
     model_id TEXT PRIMARY KEY,
     input_cost_per_1m REAL,

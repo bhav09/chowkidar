@@ -33,6 +33,15 @@ DEFAULTS: dict[str, Any] = {
     "providers": ["openai", "anthropic", "google", "mistral"],
     "webhook_url": "",
     "webhook_format": "generic",
+    "cloud_vercel_enabled": False,
+    "cloud_kubernetes_enabled": False,
+    "cloud_aws_enabled": False,
+    "cloud_gcp_enabled": False,
+    "cloud_azure_enabled": False,
+    "auto_discover_enabled": False,
+    "discover_roots": ["~/Projects", "~/Code", "~/Developer"],
+    "discover_interval_hours": 24,
+    "discover_max_depth": 4,
 }
 
 

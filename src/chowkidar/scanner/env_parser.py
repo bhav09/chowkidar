@@ -64,7 +64,7 @@ _ENV_EXCLUDE_SUBSTRINGS = {"chowkidar.bak", "chowkidar.lock"}
 
 _VALID_ENV_NAMES = {
     ".env", ".env.local", ".env.development", ".env.production",
-    ".env.staging", ".env.test", ".env.example",
+    ".env.staging", ".env.test", ".env.example", ".envrc", ".flaskenv",
 }
 
 
@@ -77,7 +77,7 @@ def _is_valid_env_file(f: Path) -> bool:
         return False
     if name in _VALID_ENV_NAMES:
         return True
-    if name == ".env" or (name.startswith(".env.") and name.count(".") == 2):
+    if name == ".env" or name.startswith(".env."):
         return True
     return False
 
@@ -95,5 +95,11 @@ def discover_env_files(directory: Path) -> list[Path]:
         if f.is_file() and f not in env_files and _is_valid_env_file(f):
             if ".git" not in f.parts and "node_modules" not in f.parts:
                 env_files.append(f)
+
+    for extra in [".envrc", ".flaskenv"]:
+        for f in directory.rglob(extra):
+            if f.is_file() and f not in env_files and _is_valid_env_file(f):
+                if ".git" not in f.parts and "node_modules" not in f.parts:
+                    env_files.append(f)
 
     return env_files

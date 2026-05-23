@@ -1,88 +1,110 @@
 # Chowkidar
 
-**Local-first LLM model deprecation watchdog.**
+[![PyPI Version](https://img.shields.io/pypi/v/chowkidar.svg)](https://pypi.org/project/chowkidar/)
+[![PyPI Downloads](https://static.pepy.tech/personalized-badge/chowkidar?period=total&units=INTERNATIONAL_SYSTEM&left_color=GREY&right_color=GREEN&left_text=downloads)](https://pepy.tech/projects/chowkidar)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-Chowkidar scans your project configs for LLM model strings, cross-references them against a local deprecation registry, and alerts you before models sunset — via desktop notifications and IDE rules that instruct AI assistants to update deprecated models automatically.
+**Chowkidar** is a secure, local-first LLM model deprecation watchdog. It scans your codebase and configuration files for LLM model references, cross-references them with a locally cached deprecation database, and alerts you before models sunset.
 
 Everything runs on your machine. Zero data exfiltration.
 
-## Quick Start
+## Core Features
+
+- **Multi-Format Scanner & Structured Writers**
+  Scans and parses model strings in `.env`, JSON, YAML, TOML, `docker-compose`, and source code. At the 1-day threshold, safely auto-updates structured configuration files with atomic writes, backups, and file locking.
+
+- **Notification-First Governance & Per-Reference Audit Log**
+  Alerts via native OS toasts and webhooks (Slack/Discord/generic) at 30 days, 15 days, 7 days, and 1 day before expiration. Every notification and update attempt is logged in a detailed audit ledger.
+
+- **Deployment Signal Detector**
+  Analyzes repo evidence (CI, Docker, Kubernetes, Vercel, Terraform) to flag likely deployed environments, preventing blind or risky local writes.
+
+- **Cloud Environment Adapters**
+  Explicit, credential-backed adapters for dry-running, updating, and verifying remote secret/config stores on Vercel, Kubernetes, AWS Secrets/SSM, GCP Secret Manager, and Azure Key Vault.
+
+- **Unified Risk & Capability Analysis**
+  Guarantees migrations won't degrade your system by verifying context windows, output tokens, vision, tool usage, JSON mode, streaming, and cost impacts.
+
+- **AI-Assistant Rules & MCP Server**
+  Generates zero-config rule instructions (`.mdc`, `CLAUDE.md`, etc.) to guide Cursor, Claude Code, Copilot, and Windsurf, alongside an interactive MCP server.
+
+## Installation & Guided Setup
 
 ```bash
-pip install chowkidar
+# 1. Install globally via pipx (recommended) or pip
+pipx install chowkidar
 
-# First-time setup (initializes config + database)
-chowkidar setup --skip-slm
-
-# Fetch deprecation data from providers
-chowkidar sync
-
-# Scan your project
-chowkidar scan .
-
-# Check for deprecated models
-chowkidar check .
+# 2. Run the idempotent guided setup & diagnostics check
+chowkidar doctor
 ```
 
-## Features
+### Autonomous Monitoring
 
-- **Multi-format scanning**: `.env`, YAML, TOML, JSON, Python, JavaScript, TypeScript
-- **Alias Unmasking**: Identifies the true underlying snapshot of rolling aliases (e.g. `gpt-4o`) to ensure reproducibility.
-- **Cost Optimization (FinOps)**: Scans for expensive models and recommends cheaper drop-in replacements with exact percentage savings.
-- **Capability Guardrails**: Blocks or warns about capability degradation (e.g. smaller context windows) when upgrading models.
-- **Privacy & Compliance**: Flags consumer-free tier models that might use prompt data for training.
-- **Provider coverage**: OpenAI, Anthropic, Google, Mistral (extensible plugin architecture)
-- **IDE rules (zero-config)**: Auto-generates rules files for Cursor, Claude Code, VS Code/Copilot, Windsurf
-- **MCP server**: Interactive tools for querying deprecation status from your IDE
-- **Desktop notifications**: Threshold-based alerts (90d, 30d, 7d, sunset)
-- **Background daemon**: Periodic scanning with OS-native service installation
-- **Local SLM**: Optional Ollama integration for parsing unstructured deprecation announcements
-- **Safe updates**: File locking, atomic writes, automatic backups, dry-run mode
-- **Cross-platform**: macOS, Linux, Windows
+The recommended `chowkidar doctor` (or `chowkidar bootstrap`) command provides a zero-friction setup that walks you through everything in one go:
+1. **Config & Database**: Creates your config and database files under `~/.chowkidar/`.
+2. **Repository Auto-Discovery**: Traverses selected workspace directory trees (defaulting to `~/Projects`, `~/Code`, `~/Developer`, and current directory) to find Git repositories, safely pruning heavy paths (like `node_modules`, `.venv`, and `dist`) to avoid CPU/disk churn.
+3. **OS Service Registration**: Registers and starts the background daemon using native OS schedulers (`launchd` on macOS, `systemd` user service on Linux, or Windows Task Scheduler) so monitoring loops start at login.
+4. **Initial Scan & Sync**: Syncs provider deprecation tables and performs an immediate first-time scan on all watched repositories to make alerts and rules files active right away.
 
-## Commands
+You can customize discovery roots and paths inside `~/.chowkidar/config.toml` or via the CLI:
+```bash
+# Toggle automatic background repository discovery
+chowkidar config auto_discover_enabled true
 
-```
-chowkidar setup [--skip-slm]     # Initialize config, DB, and optional SLM
-chowkidar scan [PATH]            # Scan for model strings
-chowkidar sync                   # Fetch deprecation data
-chowkidar check [PATH]           # Check for deprecated models
-chowkidar status                 # Show daemon status and watched projects
-chowkidar watch <PATH>           # Register project for monitoring
-chowkidar unwatch <PATH>         # Unregister project
-chowkidar pin <MODEL> [--reason] # Suppress alerts for a model
-chowkidar unpin <MODEL>          # Re-enable alerts
-chowkidar snooze <MODEL> --days  # Temporarily suppress alerts
-chowkidar daemon                 # Start background daemon
-chowkidar install-service        # Install OS-native service
-chowkidar mcp                    # Start MCP server (for IDE)
-chowkidar config [KEY] [VALUE]   # View/set configuration
-chowkidar update [--dry-run]     # Update deprecated models in .env
-chowkidar optimize               # Find cost optimization opportunities across all models
-chowkidar rules write [PATH]     # Generate IDE rules files
-chowkidar rules clean [PATH]     # Remove generated rules files
-chowkidar slm status             # Check SLM availability
+# Configure path roots to discover Git repositories in
+chowkidar config discover_roots '["~/MyRepos", "~/github"]'
+
+# Change directory scan depth
+chowkidar config discover_max_depth 5
 ```
 
-## IDE Integration
+## Top 10 CLI Commands
 
-### Automatic Rules (Recommended)
+Below are the 10 most relevant commands for daily use.
 
-Chowkidar writes rules files that AI assistants auto-discover — no configuration needed:
+### 1. `chowkidar doctor`
+Guided idempotent diagnosis, automatic repository discovery, database sync, and OS service setup.
 
-| Editor | Rules File |
-|---|---|
-| Cursor | `.cursor/rules/chowkidar-alerts.mdc` |
-| Claude Code | `.claude/rules/chowkidar-alerts.md` |
-| VS Code/Copilot | `.github/copilot-instructions.md` |
-| Windsurf | `.windsurfrules` |
+### 2. `chowkidar sync`
+Fetches and updates the local deprecation registry from providers.
 
-Run `chowkidar rules write` or let the daemon do it automatically.
+### 3. `chowkidar scan`
+Locates all LLM model references within your code and configuration files.
 
-### MCP Server (Advanced)
+### 4. `chowkidar check`
+Cross-references detected model strings against the deprecation registry.
 
-Add to your IDE's MCP config:
+### 5. `chowkidar status`
+Displays watched projects, sync freshness, and background daemon health.
 
+### 6. `chowkidar watch`
+Registers a project path with the background daemon for periodic scans.
+
+### 7. `chowkidar daemon`
+Starts the background monitoring loop (sends alerts at 30, 15, 7, and 1 day before expiry).
+
+### 8. `chowkidar update`
+Interactively reviews and updates deprecated model strings in configuration files.
+
+### 9. `chowkidar mcp`
+Launches the stdio MCP server for active IDE-level AI assistant queries.
+
+### 10. `chowkidar report`
+Generates comprehensive Markdown, JSON, or interactive HTML reports.
+
+See [COMMANDS.md](COMMANDS.md) for the complete reference containing all available CLI commands.
+
+## Editor Integration
+
+### Passive AI Rules (Zero-Config)
+AI editors auto-discover instructions in your project workspace. Chowkidar outputs non-destructive rule tables:
+- **Cursor**: `.cursor/rules/chowkidar-alerts.mdc`
+- **Claude Code**: `.claude/rules/chowkidar-alerts.md`
+- **VS Code / Copilot**: `.github/copilot-instructions.md`
+- **Windsurf**: `.windsurfrules`
+
+### MCP Server (Active)
+Configure the stdio MCP server in your IDE's configuration file:
 ```json
 {
   "mcpServers": {
@@ -94,27 +116,11 @@ Add to your IDE's MCP config:
 }
 ```
 
-## Configuration
+## Security & Local Safety
 
-Config file: `~/.chowkidar/config.toml`
-
-| Key | Default | Description |
-|---|---|---|
-| `auto_update` | `false` | Allow automatic .env modifications |
-| `write_rules` | `true` | Generate IDE rules files |
-| `gitignore_rules` | `true` | Add rules files to .gitignore |
-| `slm_enabled` | `false` | Use local SLM for parsing |
-| `slm_model` | `gemma3:1b` | Ollama model for SLM |
-| `scan_interval_hours` | `4` | How often to scan watched projects |
-| `sync_interval_hours` | `24` | How often to fetch provider data |
-
-## Security
-
-- **Zero exfiltration**: No env content, API keys, or paths leave your machine
-- **Read-only by default**: File modification requires explicit `auto_update = true`
-- **Atomic writes**: All modifications use temp file + `os.replace`
-- **Automatic backups**: `.env.chowkidar.bak` created before any change
-- **File locking**: Prevents concurrent write corruption
+- **Privacy First**: No code, project paths, keys, or configurations are ever sent to external APIs.
+- **Safe Writes**: Modifying configuration files requires setting `auto_update = true` in your config. Every update atomic-writes via a temp file and saves a `.chowkidar.bak` file for automatic rollback.
+- **Concurrent-Safe**: Uses system-level `filelock` to protect files from concurrent daemon/CLI writes.
 
 ## License
 

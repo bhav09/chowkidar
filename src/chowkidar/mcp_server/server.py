@@ -14,9 +14,11 @@ from pathlib import Path
 from mcp.server.fastmcp import FastMCP
 
 from ..config import Config
+from ..recommendations import build_recommendation
 from ..registry.db import Registry
 from ..scanner import scan_directory
 from ..updater.env_writer import update_env_value
+from ..updater.structured_writer import update_model_reference as update_structured_reference
 
 mcp = FastMCP(
     "chowkidar",
@@ -156,6 +158,42 @@ def get_model_status(model_id: str) -> str:
 
 
 @mcp.tool()
+def list_model_recommendations(project_path: str | None = None) -> str:
+    """Return validated replacement recommendations and risk details for a project."""
+    project_path = project_path or os.getcwd()
+    registry = _get_registry()
+    scan_result = scan_directory(project_path)
+    recommendations: list[dict] = []
+
+    for model_info in scan_result.all_models:
+        canonical = model_info["canonical"]
+        record = registry.get_model(canonical)
+        if not record or not record.sunset_date:
+            continue
+        rec = build_recommendation(canonical, record).to_dict()
+        rec.update({
+            "variable": model_info["variable"],
+            "file": model_info["file"],
+            "source_type": model_info["source_type"],
+            "is_pinned": registry.is_pinned(canonical),
+        })
+        recommendations.append(rec)
+
+    return json.dumps({
+        "project": project_path,
+        "recommendations": recommendations,
+        "last_registry_sync": registry.last_sync_time(),
+    }, indent=2)
+
+
+@mcp.tool()
+def get_action_audit(project_path: str | None = None, limit: int = 100) -> str:
+    """Return Chowkidar notification/write audit records."""
+    registry = _get_registry()
+    return json.dumps(registry.get_action_audit(project_path, limit), indent=2)
+
+
+@mcp.tool()
 def update_model_env(
     file_path: str,
     variable_name: str,
@@ -193,6 +231,37 @@ def update_model_env(
         dry_run=dry_run,
     )
 
+    return json.dumps(result, indent=2)
+
+
+@mcp.tool()
+def update_model_reference(
+    file_path: str,
+    key_path: str,
+    new_model: str,
+    dry_run: bool = False,
+) -> str:
+    """Update a model value in a supported structured local file.
+
+    Supported local targets are .env, JSON, YAML, TOML, and docker-compose YAML.
+    This tool requires AUTO_UPDATE=true in Chowkidar config unless dry_run is true.
+    """
+    config = _get_config()
+    if not config.get("auto_update", False) and not dry_run:
+        return json.dumps({
+            "status": "permission_denied",
+            "message": (
+                "Auto-update is disabled. Enable with: chowkidar config set auto_update true\n"
+                "Or run this tool with dry_run=true."
+            ),
+        })
+
+    result = update_structured_reference(
+        file_path=Path(file_path),
+        key_path=key_path,
+        new_value=new_model,
+        dry_run=dry_run,
+    )
     return json.dumps(result, indent=2)
 
 

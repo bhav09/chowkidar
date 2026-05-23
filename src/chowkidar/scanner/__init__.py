@@ -16,6 +16,7 @@ from .config_parser import (
 from .env_parser import EnvModelEntry, discover_env_files, parse_env_file
 from .framework_detector import strip_framework_prefix
 from .patterns import ModelMatch, identify_provider, normalize_model_id
+from .discovery import discover_repositories
 
 __all__ = [
     "ScanResult",
@@ -23,6 +24,7 @@ __all__ = [
     "EnvModelEntry",
     "ConfigModelEntry",
     "ModelMatch",
+    "discover_repositories",
 ]
 
 

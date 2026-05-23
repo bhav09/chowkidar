@@ -59,8 +59,33 @@ class Registry:
     def init_db(self) -> None:
         schema_path = Path(__file__).parent / "schema.sql"
         schema = schema_path.read_text()
+        # Migrate existing schema first if table exists so indexes in schema.sql don't fail
+        table_exists = self.conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='notification_log'"
+        ).fetchone()
+        if table_exists:
+            self._migrate_existing_schema()
         self.conn.executescript(schema)
         self.conn.commit()
+
+    def _migrate_existing_schema(self) -> None:
+        """Add newer audit columns to existing local databases."""
+        notification_columns = {
+            row["name"] for row in self.conn.execute("PRAGMA table_info(notification_log)").fetchall()
+        }
+        new_notification_columns = {
+            "file_path": "TEXT",
+            "variable_name": "TEXT",
+            "channel": "TEXT DEFAULT 'desktop'",
+            "delivery_status": "TEXT DEFAULT 'delivered'",
+            "webhook_status": "TEXT",
+            "report_path": "TEXT",
+            "recommendation": "TEXT",
+            "error": "TEXT",
+        }
+        for column, definition in new_notification_columns.items():
+            if column not in notification_columns:
+                self.conn.execute(f"ALTER TABLE notification_log ADD COLUMN {column} {definition}")
 
     def close(self) -> None:
         if self._conn is not None:
@@ -183,24 +208,114 @@ class Registry:
 
     # --- Notifications ---
 
-    def log_notification(self, project_path: str, model_id: str, threshold: str) -> None:
+    def log_notification(
+        self,
+        project_path: str,
+        model_id: str,
+        threshold: str,
+        *,
+        file_path: str | None = None,
+        variable_name: str | None = None,
+        channel: str = "desktop",
+        delivery_status: str = "delivered",
+        webhook_status: str | None = None,
+        report_path: str | None = None,
+        recommendation: str | None = None,
+        error: str | None = None,
+    ) -> None:
         self.conn.execute(
-            "INSERT INTO notification_log (project_path, model_id, threshold) VALUES (?, ?, ?)",
-            (project_path, model_id, threshold),
+            """INSERT INTO notification_log (
+                project_path, model_id, threshold, file_path, variable_name, channel,
+                delivery_status, webhook_status, report_path, recommendation, error
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                project_path, model_id, threshold, file_path, variable_name, channel,
+                delivery_status, webhook_status, report_path, recommendation, error,
+            ),
         )
         self.conn.commit()
 
     def is_recently_notified(
-        self, project_path: str, model_id: str, threshold: str, cooldown_hours: int = 24
+        self,
+        project_path: str,
+        model_id: str,
+        threshold: str,
+        cooldown_hours: int = 24,
+        *,
+        file_path: str | None = None,
+        variable_name: str | None = None,
     ) -> bool:
         cutoff = (datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=cooldown_hours)).isoformat()
-        row = self.conn.execute(
-            """SELECT 1 FROM notification_log
-               WHERE project_path = ? AND model_id = ? AND threshold = ? AND notified_at > ?
-               LIMIT 1""",
-            (project_path, model_id, threshold, cutoff),
-        ).fetchone()
+        query = [
+            "SELECT 1 FROM notification_log",
+            "WHERE project_path = ? AND model_id = ? AND threshold = ?",
+            "AND notified_at > ? AND COALESCE(delivery_status, 'delivered') = 'delivered'",
+        ]
+        params: list[str] = [project_path, model_id, threshold, cutoff]
+        if file_path is not None:
+            query.append("AND file_path = ?")
+            params.append(file_path)
+        if variable_name is not None:
+            query.append("AND variable_name = ?")
+            params.append(variable_name)
+        query.append("LIMIT 1")
+        row = self.conn.execute(" ".join(query), params).fetchone()
         return row is not None
+
+    def log_action(
+        self,
+        project_path: str,
+        action_type: str,
+        target_type: str,
+        status: str,
+        *,
+        target_path: str | None = None,
+        variable_name: str | None = None,
+        model_id: str | None = None,
+        old_value: str | None = None,
+        new_value: str | None = None,
+        message: str | None = None,
+        metadata: dict | None = None,
+    ) -> None:
+        self.conn.execute(
+            """INSERT INTO action_audit (
+                project_path, action_type, target_type, target_path, variable_name,
+                model_id, old_value, new_value, status, message, metadata
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                project_path, action_type, target_type, target_path, variable_name,
+                model_id, old_value, new_value, status, message, json.dumps(metadata or {}),
+            ),
+        )
+        self.conn.commit()
+
+    def get_action_audit(self, project_path: str | None = None, limit: int = 100) -> list[dict]:
+        query = "SELECT * FROM action_audit"
+        params: list[str | int] = []
+        if project_path is not None:
+            query += " WHERE project_path = ?"
+            params.append(project_path)
+        query += " ORDER BY created_at DESC LIMIT ?"
+        params.append(limit)
+        rows = self.conn.execute(query, params).fetchall()
+        return [
+            {
+                "id": r["id"],
+                "project_path": r["project_path"],
+                "action_type": r["action_type"],
+                "target_type": r["target_type"],
+                "target_path": r["target_path"],
+                "variable_name": r["variable_name"],
+                "model_id": r["model_id"],
+                "old_value": r["old_value"],
+                "new_value": r["new_value"],
+                "status": r["status"],
+                "message": r["message"],
+                "metadata": json.loads(r["metadata"] or "{}"),
+                "created_at": r["created_at"],
+            }
+            for r in rows
+        ]
 
     def set_snooze(self, model_id: str, days: int) -> None:
         until = (datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(days=days)).isoformat()

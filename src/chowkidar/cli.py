@@ -286,6 +286,9 @@ def check(
 @app.command()
 def status() -> None:
     """Show daemon status, registry freshness, and watched projects."""
+    import json
+    import os
+    import sys
     from .registry.db import Registry
     from .sentinel.service import is_service_installed
 
@@ -307,8 +310,85 @@ def status() -> None:
     else:
         console.print("  Registry: [red]never synced[/red] — run 'chowkidar sync'")
 
+    # Background service process health diagnostics
+    def is_pid_running(pid: int) -> bool:
+        if pid <= 0:
+            return False
+        if sys.platform != "win32":
+            try:
+                os.kill(pid, 0)
+                return True
+            except OSError:
+                return False
+        else:
+            import subprocess
+            try:
+                out = subprocess.run(
+                    ["tasklist", "/FI", f"PID eq {pid}", "/NH"],
+                    capture_output=True, text=True, check=False
+                )
+                return str(pid) in out.stdout
+            except Exception:
+                return False
+
+    status_file = CHOWKIDAR_HOME / "daemon_status.json"
+    daemon_running = False
+    daemon_info = {}
+    if status_file.exists():
+        try:
+            daemon_info = json.loads(status_file.read_text(encoding="utf-8"))
+            pid = daemon_info.get("pid", 0)
+            if is_pid_running(pid) and daemon_info.get("status") in ("running", "starting"):
+                daemon_running = True
+        except Exception:
+            pass
+
     service_installed = is_service_installed()
-    console.print(f"  Service: {'[green]installed[/green]' if service_installed else '[dim]not installed[/dim]'}")
+    console.print(f"  Service OS registration: {'[green]installed[/green]' if service_installed else '[dim]not installed[/dim]'}")
+
+    if daemon_running:
+        started_at_str = daemon_info.get("started_at")
+        uptime_str = "-"
+        if started_at_str:
+            try:
+                started_at = datetime.fromisoformat(started_at_str)
+                if started_at.tzinfo is None:
+                    started_at = started_at.replace(tzinfo=timezone.utc)
+                now_utc = datetime.now(timezone.utc)
+                diff = now_utc - started_at
+                days = diff.days
+                hours, remainder = divmod(diff.seconds, 3600)
+                minutes, seconds = divmod(remainder, 60)
+                uptime_parts = []
+                if days > 0:
+                    uptime_parts.append(f"{days}d")
+                if hours > 0:
+                    uptime_parts.append(f"{hours}h")
+                if minutes > 0:
+                    uptime_parts.append(f"{minutes}m")
+                if not uptime_parts:
+                    uptime_parts.append(f"{seconds}s")
+                uptime_str = " ".join(uptime_parts)
+            except Exception:
+                pass
+        
+        console.print(f"  Daemon process: [green]running[/green] (PID: {daemon_info.get('pid')}, uptime: {uptime_str})")
+        
+        last_heartbeat_str = daemon_info.get("last_heartbeat")
+        if last_heartbeat_str:
+            try:
+                lh = datetime.fromisoformat(last_heartbeat_str)
+                if lh.tzinfo is None:
+                    lh = lh.replace(tzinfo=timezone.utc)
+                diff_sec = int((datetime.now(timezone.utc) - lh).total_seconds())
+                console.print(f"  Daemon heartbeat: {diff_sec}s ago")
+            except Exception:
+                pass
+                
+        if daemon_info.get("last_scan_at"):
+            console.print(f"  Last scan check: {daemon_info.get('last_scan_at')}")
+    else:
+        console.print("  Daemon process: [dim]stopped[/dim]")
 
     projects = registry.get_watched_projects()
     if projects:
@@ -316,7 +396,7 @@ def status() -> None:
         for p in projects:
             console.print(f"    • {p}")
     else:
-        console.print("  Watched projects: [dim]none[/dim] — run 'chowkidar watch <path>'")
+        console.print("  Watched projects: [dim]none[/dim] — run 'chowkidar watch <path>' or 'chowkidar doctor'")
 
     pinned = registry.get_pinned_models()
     if pinned:
@@ -454,6 +534,175 @@ def setup(
     console.print("  4. chowkidar install-service — enable background daemon")
 
 
+# --- doctor ---
+
+@app.command(name="doctor")
+def doctor_cmd(
+    non_interactive: bool = typer.Option(False, "--non-interactive", help="Run without prompts (automatic options selected)"),
+) -> None:
+    """Idempotent guided configuration diagnostics, repository discovery, and OS service installation."""
+    import logging
+    logger = logging.getLogger("chowkidar.cli")
+
+    console.print(Panel("[bold cyan]Chowkidar Doctor & Guided Setup[/bold cyan]", subtitle="Local-first LLM deprecation watchdog"))
+
+    # Step 1: Config & DB Initialization
+    config = _get_config()
+    config.save()
+    console.print(f"  [green]✓[/green] Config initialized: {config.path}")
+
+    from .registry.db import Registry
+    registry = Registry()
+    registry.init_db()
+    console.print(f"  [green]✓[/green] Database initialized: {CHOWKIDAR_HOME / 'registry.db'}")
+
+    # Step 2: Auto-Discover Repositories
+    console.print("\n[bold]1. Scanning for repositories...[/bold]")
+    from .scanner import discover_repositories
+    
+    roots = config.get("discover_roots", ["~/Projects", "~/Code", "~/Developer"])
+    depth = config.get("discover_max_depth", 4)
+    
+    with console.status("Auto-discovering repositories..."):
+        discovered_paths = discover_repositories(roots, max_depth=depth)
+    
+    # Also check if current working directory is a git repo and not already in discovered list
+    cwd = Path.cwd().resolve()
+    git_cwd_dir = cwd / ".git"
+    if git_cwd_dir.exists() and git_cwd_dir.is_dir() and cwd not in discovered_paths:
+        discovered_paths.append(cwd)
+
+    # Filter out paths that are already watched
+    watched_projects = registry.get_watched_projects()
+    new_paths = [p for p in discovered_paths if str(p) not in watched_projects]
+
+    if watched_projects:
+        console.print(f"  Currently watching [bold]{len(watched_projects)}[/bold] projects.")
+        for p in watched_projects:
+            console.print(f"    • {p} [dim](active)[/dim]")
+
+    if new_paths:
+        console.print(f"  Found [bold]{len(new_paths)}[/bold] new git repositories:")
+        for p in new_paths[:10]:
+            console.print(f"    • {p}")
+        if len(new_paths) > 10:
+            console.print(f"    ... and {len(new_paths) - 10} more.")
+
+        # Interactive check
+        should_watch = True
+        if not non_interactive:
+            should_watch = typer.confirm("\nDo you want Chowkidar to watch and monitor these new repositories?", default=True)
+
+        if should_watch:
+            for p in new_paths:
+                registry.watch_project(str(p))
+            console.print(f"  [green]✓[/green] Registered [bold]{len(new_paths)}[/bold] new projects.")
+            config.set("auto_discover_enabled", True)
+            config.save()
+        else:
+            console.print("  [yellow]⚠[/yellow] Skipped registering new repositories.")
+    else:
+        console.print("  No new repositories found to register.")
+
+    # Step 3: Check OS Service Installation
+    console.print("\n[bold]2. Background Service Diagnostics[/bold]")
+    from .sentinel.service import is_service_installed, install_service
+    
+    service_installed = is_service_installed()
+    if service_installed:
+        console.print("  [green]✓[/green] Background OS service is already installed and registered.")
+    else:
+        console.print("  [yellow]⚠[/yellow] Background OS service is not installed.")
+        should_install = True
+        if not non_interactive:
+            should_install = typer.confirm("Do you want to install and enable the background daemon service?", default=True)
+            
+        if should_install:
+            with console.status("Installing background service..."):
+                success, msg = install_service()
+            if success:
+                console.print(f"  [green]✓[/green] {msg}")
+            else:
+                console.print(f"  [red]✗[/red] {msg}")
+        else:
+            console.print("  [yellow]⚠[/yellow] Background service installation skipped. To start manually, run 'chowkidar daemon'.")
+
+    # Step 4: First-time sync and scan
+    console.print("\n[bold]3. Database Sync & Initial Scan[/bold]")
+    
+    # Perform a sync
+    last_sync = registry.last_sync_time()
+    if not last_sync or non_interactive or typer.confirm("Do you want to sync the deprecation registry with LLM providers now?", default=True):
+        console.print("  Syncing deprecation registry...")
+        from .providers.openai_provider import OpenAIProvider
+        from .providers.anthropic_provider import AnthropicProvider
+        from .providers.google_provider import GoogleProvider
+        from .providers.mistral_provider import MistralProvider
+        
+        enabled_providers = config.get("providers", ["openai", "anthropic", "google", "mistral"])
+        
+        async def _sync() -> None:
+            providers = []
+            if "openai" in enabled_providers:
+                providers.append(OpenAIProvider())
+            if "anthropic" in enabled_providers:
+                providers.append(AnthropicProvider())
+            if "google" in enabled_providers:
+                providers.append(GoogleProvider())
+            if "mistral" in enabled_providers:
+                providers.append(MistralProvider())
+            
+            for provider in providers:
+                try:
+                    deprecations = await provider.fetch_deprecations()
+                    for dep in deprecations:
+                        registry.upsert_model(
+                            model_id=dep.model_id,
+                            provider=dep.provider,
+                            sunset_date=dep.sunset_date,
+                            replacement=dep.replacement,
+                            replacement_confidence=dep.replacement_confidence,
+                            breaking_changes=dep.breaking_changes,
+                            source_url=dep.source_url,
+                        )
+                except Exception as e:
+                    logger.debug("Failed to sync %s during doctor: %s", provider.name, e)
+        import asyncio
+        try:
+            asyncio.run(_sync())
+            console.print("  [green]✓[/green] Registry synced successfully.")
+        except Exception as e:
+            console.print(f"  [red]✗[/red] Sync failed: {e}")
+
+    # Perform an initial scan on watched projects
+    projects = registry.get_watched_projects()
+    if projects:
+        console.print(f"  Scanning {len(projects)} watched projects...")
+        from .scanner import scan_directory
+        for project_path in projects:
+            try:
+                scan_res = scan_directory(project_path)
+                registry.save_scan_results(project_path, scan_res.all_models)
+                registry.update_watch_timestamp(project_path)
+            except Exception as e:
+                logger.debug("Scan failed for %s during doctor: %s", project_path, e)
+        console.print("  [green]✓[/green] Initial scan complete.")
+
+    registry.close()
+
+    console.print("\n[bold green]Chowkidar Doctor has completed checkups![/bold green]")
+    console.print("Chowkidar is fully configured to protect your applications from model sunsets entirely locally!")
+
+
+# Also expose as alias bootstrap
+@app.command(name="bootstrap", hidden=True)
+def bootstrap_cmd(
+    non_interactive: bool = typer.Option(False, "--non-interactive", help="Run without prompts"),
+) -> None:
+    """Guided bootstrap (alias of doctor)."""
+    doctor_cmd(non_interactive=non_interactive)
+
+
 # --- daemon ---
 
 @app.command()
@@ -565,10 +814,11 @@ def update(
     path: Optional[str] = typer.Argument(None, help="Project directory (default: CWD)"),
     dry_run: bool = typer.Option(False, "--dry-run", help="Preview changes without writing"),
 ) -> None:
-    """Update deprecated model values in .env files."""
+    """Update deprecated model values in supported structured local files."""
+    from .recommendations import build_recommendation
     from .registry.db import Registry
     from .scanner import scan_directory
-    from .updater.env_writer import update_env_value
+    from .updater.structured_writer import detect_target_type, update_model_reference
 
     config = _get_config()
     if not config.get("auto_update", False) and not dry_run:
@@ -584,19 +834,27 @@ def update(
 
     updates: list[dict] = []
     for m in scan_result.all_models:
-        if m["source_type"] != "env":
+        target_type = detect_target_type(Path(m["file"]))
+        if target_type == "unsupported" or str(m["variable"]).startswith("L"):
             continue
         canonical = m["canonical"]
         record = registry.get_model(canonical)
         if record and record.sunset_date and record.replacement:
             if not registry.is_pinned(canonical):
+                recommendation = build_recommendation(canonical, record)
+                if not recommendation.recommended_model:
+                    continue
                 updates.append({
                     "file": m["file"],
                     "variable": m["variable"],
                     "old_model": m["model"],
-                    "new_model": record.replacement.split("/")[-1],
+                    "new_model": recommendation.recommended_model
+                    if "/" in m["model"]
+                    else recommendation.recommended_model.split("/")[-1],
                     "confidence": record.replacement_confidence,
                     "breaking": record.breaking_changes,
+                    "target_type": target_type,
+                    "manual_review_required": recommendation.manual_review_required,
                 })
 
     if not updates:
@@ -610,11 +868,13 @@ def update(
     table.add_column("New Model", style="green")
     table.add_column("Confidence")
     table.add_column("Breaking?")
+    table.add_column("Review?")
 
     for u in updates:
         table.add_row(
             u["variable"], u["old_model"], "→", u["new_model"],
             u["confidence"], "Yes" if u["breaking"] else "No",
+            "Yes" if u["manual_review_required"] else "No",
         )
 
     console.print(table)
@@ -642,10 +902,33 @@ def update(
         return
 
     for u in updates:
-        result = update_env_value(
+        if u["manual_review_required"]:
+            console.print(f"  [yellow]skipped[/yellow] {u['variable']}: manual review required")
+            registry.log_action(
+                str(target),
+                "manual_update",
+                u["target_type"],
+                "blocked",
+                target_path=u["file"],
+                variable_name=u["variable"],
+                message="Manual review required before update.",
+            )
+            continue
+        result = update_model_reference(
             file_path=Path(u["file"]),
-            variable_name=u["variable"],
+            key_path=u["variable"],
             new_value=u["new_model"],
+        )
+        registry.log_action(
+            str(target),
+            "manual_update",
+            result.get("target_type", u["target_type"]),
+            result.get("status", "error"),
+            target_path=u["file"],
+            variable_name=u["variable"],
+            old_value=result.get("old_value"),
+            new_value=result.get("new_value"),
+            message=result.get("message"),
         )
         if result["status"] == "updated":
             console.print(f"  [green]✓[/green] {u['variable']}: {u['old_model']} → {u['new_model']}")
@@ -661,21 +944,21 @@ def update(
 def slm_status() -> None:
     """Check the status of Ollama, hardware resource allocation, and the selected SLM model."""
     from .slm.client import SLMClient
-    from .slm.selector import get_system_ram_gb, get_free_disk_gb, select_best_slm
+    from .slm.selector import get_free_disk_gb, get_system_ram_gb, select_best_slm
 
     config = _get_config()
     client = SLMClient(config)
-    
+
     console.print("[bold]Local SLM Diagnostics:[/bold]")
-    
+
     ram = get_system_ram_gb()
     disk = get_free_disk_gb()
     console.print(f"  System RAM: {ram:.1f} GB")
     console.print(f"  Free Disk space: {disk:.1f} GB")
-    
+
     selected_model, select_reason = select_best_slm(config)
     console.print(f"  Recommended Model: [green]{selected_model}[/green] ({select_reason})")
-    
+
     success, message = client.test_connection()
     if success:
         console.print(f"  Ollama Status: [green]✓ {message}[/green]")
@@ -693,22 +976,22 @@ def slm_choose(
 ) -> None:
     """Analyze system hardware and choose/pull the best small local model for the machine."""
     from .slm.selector import select_best_slm
-    from .slm.setup import check_model_available, pull_model, ensure_ollama_running
+    from .slm.setup import check_model_available, ensure_ollama_running, pull_model
 
     config = _get_config()
-    
+
     console.print("[yellow]Analyzing hardware configuration...[/yellow]")
     model, reason = select_best_slm(config)
-    
-    console.print(f"\n[bold green]Recommended SLM profile choice:[/bold green]")
+
+    console.print("\n[bold green]Recommended SLM profile choice:[/bold green]")
     console.print(f"  • Model: [cyan]{model}[/cyan]")
     console.print(f"  • Reason: {reason}")
-    
+
     confirm = typer.confirm(f"\nDo you want to configure Chowkidar to use '{model}'?", default=True)
     if not confirm:
         console.print("[yellow]Cancelled.[/yellow]")
         return
-        
+
     config.set("slm_model", model)
     config.set("slm_enabled", True)
     config.save()
@@ -896,7 +1179,6 @@ def optimize(
     """Find cost optimization opportunities across all models in the project."""
     from .pricing import get_pricing
     from .scanner import scan_directory
-    from .scanner.patterns import identify_provider
 
     target = Path(path).resolve() if path else Path.cwd()
     scan_result = scan_directory(target)
@@ -928,7 +1210,7 @@ def optimize(
     for m in scan_result.all_models:
         canonical = m["canonical"]
         suggestion = OPTIMIZATION_MAP.get(canonical)
-        
+
         if not suggestion:
             continue
 
@@ -941,10 +1223,10 @@ def optimize(
         # Calculate blended savings (assuming 1 input token to 1 output token ratio for simplicity)
         cur_cost = cur_pricing["input"] + cur_pricing["output"]
         new_cost = new_pricing["input"] + new_pricing["output"]
-        
+
         if new_cost < cur_cost:
             savings_pct = ((cur_cost - new_cost) / cur_cost) * 100
-            
+
             ctx_cur = cur_pricing["context"]
             ctx_new = new_pricing["context"]
             if ctx_new > ctx_cur:
@@ -1086,8 +1368,32 @@ def report(
     report_text = generate_report(project_paths, output_format, registry)
 
     if output_file:
-        Path(output_file).write_text(report_text)
+        Path(output_file).write_text(report_text, encoding="utf-8")
         console.print(f"[green]✓[/green] Report written to {output_file}")
+    elif output_format == "html":
+        # Save HTML to a temporary file, serve it, and open the browser!
+        report_dir = CHOWKIDAR_HOME / "reports"
+        report_dir.mkdir(parents=True, exist_ok=True)
+        temp_report = report_dir / "latest_cli_report.html"
+        try:
+            temp_report.write_text(report_text, encoding="utf-8")
+            import time
+            import urllib.parse
+            import webbrowser
+
+            from .report_server import start_report_server
+            port = start_report_server("", temp_report)
+            url = f"http://127.0.0.1:{port}/?path={urllib.parse.quote(str(temp_report.resolve()))}"
+            console.print(f"[green]✓ Serving HTML report at {url}[/green]")
+            console.print("[dim]Press Ctrl+C to stop serving...[/dim]")
+            webbrowser.open(url)
+            # Keep it running so they can interact
+            while True:
+                time.sleep(1)
+        except KeyboardInterrupt:
+            console.print("\n[yellow]Stopping report server.[/yellow]")
+        except Exception as e:
+            console.print(f"[red]Failed to serve report: {e}[/red]")
     else:
         console.print(report_text)
 
@@ -1216,19 +1522,54 @@ def test_migration(
 
 @app.command(name="test-notify")
 def test_notify() -> None:
-    """Send a test folder-level summary desktop notification to verify setup, permissions, and layout formatting."""
+    """Send a real model deprecation warning notification and generate a clickable report."""
+    from .report import _render_html
     from .sentinel.notifier import notify
 
-    title = "Chowkidar: test-project has 2 expiring model(s)"
-    message = "gpt-3.5-turbo (expired) -> gpt-4o-mini, claude-2.1 (14d) -> claude-3-haiku. Smart advisory rules generated for IDE assistant."
-    
-    console.print("[yellow]Sending test consolidated folder notification...[/yellow]")
-    success = notify(title, message, urgency="critical")
+    # Ensure reports directory exists
+    report_dir = CHOWKIDAR_HOME / "reports"
+    report_dir.mkdir(parents=True, exist_ok=True)
+    report_file = report_dir / "test_report.html"
+
+    # Create mock projects data for the test report
+    mock_data = [
+        {
+            "path": str(Path.cwd()),
+            "name": Path.cwd().name,
+            "total_models": 1,
+            "models": [
+                {
+                    "variable": "OPENAI_MODEL",
+                    "model": "gpt-3.5-turbo",
+                    "file": str(Path.cwd() / ".env"),
+                    "canonical": "openai/gpt-3.5-turbo",
+                    "status": "sunset",
+                    "sunset_date": "2024-01-01",
+                    "days_until": -100,
+                    "replacement": "openai/gpt-4o-mini",
+                    "cost_summary": "Saves 80% on cost"
+                }
+            ]
+        }
+    ]
+
+    try:
+        html_content = _render_html(mock_data, datetime.now())
+        report_file.write_text(html_content, encoding="utf-8")
+    except Exception as e:
+        console.print(f"[red]Failed to generate test report HTML: {e}[/red]")
+        raise typer.Exit(1)
+
+    title = f"ALERT: Sunset Models in {Path.cwd().name} (1 model)"
+    message = "gpt-3.5-turbo (expired) -> gpt-4o-mini. Full local advisory rules generated for IDE assistant."
+
+    console.print("[yellow]Sending model deprecation notification warning...[/yellow]")
+    success = notify(title, message, urgency="critical", click_target=str(report_file))
     if success:
-        console.print("[green]✓ Test folder notification sent successfully![/green]")
-        console.print("[dim]If you didn't see a banner, check your OS notifications settings to ensure Chowkidar is permitted.[/dim]")
+        console.print("[green]✓ Model deprecation warning notification sent successfully![/green]")
+        console.print("[dim]Click the notification alert to open the local report and open your editor.[/dim]")
     else:
-        console.print("[red]✗ Failed to send test notification.[/red]")
+        console.print("[red]✗ Failed to send notification.[/red]")
         raise typer.Exit(1)
 
 

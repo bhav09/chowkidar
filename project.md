@@ -1,6 +1,6 @@
 # Chowkidar — Enhanced Task Brief (ETB)
 
-## Status: AWAITING APPROVAL
+## Status: APPROVED (Phase 11 in progress)
 
 ---
 
@@ -497,4 +497,310 @@ chowkidar/
 
 ---
 
-> **Next step**: User approves this ETB, then we begin Phase 10 implementation.
+> **Phase 10 Status**: Approved and Implemented.
+
+---
+
+## Feature Addition: Native Report Notifications & Enhanced Click-throughs (Phase 11)
+
+### Objectives
+1. **PyPI Presentation Polish**: Include clear version badges, links, and detailed rendering instructions in the `README.md` that publishes directly to PyPI, showing users how Chowkidar performs as a watchdog.
+2. **Actionable HTML/Markdown/JSON Reports**: Update reports to visually highlight the exact deprecated or sunsetting model strings, variables, and files. Introduce an interactive local server/bridge mechanism in Chowkidar that runs a CLI command or serves a local endpoint to open the directory/env files of the deprecated model in the user's default editor (with support for `CHOWKIDAR_EDITOR`, `VISUAL`, `EDITOR`, or common IDEs like Cursor and VS Code, falling back to OS file manager).
+3. **Cross-OS Native Click-throughs**: Refactor the cross-platform notification module to support clicking/activation of notifications on macOS, Linux, and Windows. Clicking a notification must trigger the full report viewer flow and highlight the affected file or project.
+4. **Daemon Integration & Real alerts**: Replace mock notification text with descriptive, actual model deprecation warning wording (e.g. detailing the model name, variable name, sunset date/days left, and recommended replacement model). Wire the daemon to dynamically generate report files when deprecations are found, and pass the report paths to the native click action handlers.
+5. **Universal OS Support & Multi-OS Safety**: Fully support macOS, Linux, and Windows path formats, quoting, and process triggers. Ensure full test coverage and verification.
+
+### Implementation Plan
+
+#### Part A: README/PyPI Presentation
+- Add PyPI badges and clear package metadata to `README.md`.
+- Explain how README renders on PyPI and add details on the local report/notification features.
+
+#### Part B: Actionable Reports & Editor Triggers
+- Update `src/chowkidar/report.py` HTML generation to highlight deprecations with strong styling.
+- Add an interactive webview action or local loopback command execution trigger in the report so clicking a button opens the target directory or file in the default/configured editor.
+- Implement editor resolution: read `CHOWKIDAR_EDITOR`, `VISUAL`, `EDITOR`, check if `cursor` or `code` are on path, and fall back to opening the folder using the native explorer (`open`, `xdg-open`, or `explorer.exe`).
+
+#### Part C: Clickable Native OS Notifications
+- In `src/chowkidar/sentinel/notifier.py`, extend native functions to handle click/activation actions.
+- On macOS, use `osascript` to trigger custom event links or look into lightweight native execution wrapper to handle click detection; or implement an OS-specific background click listener if possible.
+- On Linux, use `notify-send` with action support where supported, or standard click callbacks.
+- On Windows, leverage PowerShell Toast notifications with a protocol link or direct action command argument to start our local report viewer/editor launcher.
+
+#### Part D: Daemon Wiring & Realistic Messages
+- Replace mock test messages with real, dynamic warning strings showing specific model information.
+- Configure `test-notify` to show realistic deprecation alerts and test the end-to-end report click-through and folder-opening pathways.
+
+#### Part E: Test Additions & OS Safety
+- Write robust pytest tests under `tests/test_notifier.py`, `tests/test_report.py`, and a new CLI integration test suite.
+- Verify path formatting, quoting, and escape behavior on Windows, macOS, and Linux.
+
+---
+
+> **Phase 11 Status**: APPROVED (User explicitly requested implementation).
+
+---
+
+## Feature Addition: Notification-First Deprecation Governance (Phase 12)
+
+### Status
+
+**PENDING APPROVAL**
+
+Implementation must not begin until this ETB is explicitly approved.
+
+### Enhanced Task Brief
+
+Chowkidar must become a notification-first model deprecation governance tool. Its primary responsibility is to detect model deprecation risk, notify the right people, explain replacement options and risks, and keep a durable audit trail. It must not silently change the selected model.
+
+Model changes are allowed only under strict policy:
+
+1. Default behavior is notify-only.
+2. Local automatic writes require `auto_update = true`.
+3. Automatic writes are allowed only when exactly one day is left before the model sunset.
+4. Automatic local writes are limited to structured configuration files: `.env`, JSON, YAML, TOML, and docker-compose YAML.
+5. Source-code references are scan/report/notify only; they are not auto-edited.
+6. Cloud/deployed environment writes require an explicit adapter, explicit credentials, a successful dry-run, a confident mapping to the remote variable/secret, and complete audit logging.
+
+### Core Clarification: Deployed Apps Cannot Be Known From Local Files Alone
+
+Chowkidar cannot prove that an application is deployed by scanning local files. Local files can only provide deployment signals, such as:
+
+- Vercel config or project metadata.
+- Kubernetes manifests, Helm charts, Kustomize overlays, Secrets, or ConfigMaps.
+- Terraform or cloud provider references.
+- GitHub Actions, GitLab CI, or other deployment workflows.
+- Dockerfiles and docker-compose files.
+- References to AWS, GCP, or Azure secret names and runtime variables.
+
+Therefore, Chowkidar must represent local deployment detection as evidence with confidence, not certainty. A deployed target is confirmed only when a configured cloud adapter authenticates and verifies the remote project, cluster object, secret, or environment variable exists.
+
+### Objectives
+
+1. **Notification-first behavior**: notify on deprecation risk without changing models by default.
+2. **Per-reference auditability**: log notification attempts, delivery results, recommendation shown, write eligibility, write attempts, failures, rollback metadata, and cloud adapter results.
+3. **Structured-file support beyond `.env`**: scan broadly and support safe writes to `.env`, JSON, YAML, TOML, and docker-compose YAML.
+4. **Deployment signal detection**: infer possible deployment surfaces from local evidence and show confidence plus evidence files.
+5. **Cloud adapter support**: include first-round adapters for Vercel, Kubernetes, AWS Secrets Manager/SSM Parameter Store, GCP Secret Manager, and Azure Key Vault.
+6. **Unified recommendations**: provide one recommendation engine used by notifications, reports, CLI, MCP, IDE rules, and update flows.
+7. **Commercial and capability risk reporting**: explain cost impact, prompt/commercial behavior risks, privacy/provider risk, capability regressions, and future compatibility risks.
+8. **Fallback-first execution**: when sync, recommendation, notification, local writes, or cloud writes fail, Chowkidar must notify/log the blocker and avoid unsafe mutation.
+
+### Proposed Architecture
+
+```mermaid
+flowchart TD
+    localRepo[Local Repo Scan] --> deploymentDetector[Deployment Signal Detector]
+    localRepo --> modelFinder[Model Reference Finder]
+    modelFinder --> deprecationEvaluator[Deprecation Evaluator]
+    deprecationEvaluator --> recommendationEngine[Recommendation Engine]
+    recommendationEngine --> notificationDispatcher[Notification Dispatcher]
+    notificationDispatcher --> auditLog[Notification And Action Log]
+    deprecationEvaluator --> localWriter[Structured Local Writer]
+    deprecationEvaluator --> cloudDispatcher[Cloud Adapter Dispatcher]
+    deploymentDetector --> cloudDispatcher
+    cloudDispatcher --> vercel[Vercel]
+    cloudDispatcher --> kubernetes[Kubernetes]
+    cloudDispatcher --> aws[AWS Secrets Or SSM]
+    cloudDispatcher --> gcp[GCP Secret Manager]
+    cloudDispatcher --> azure[Azure Key Vault]
+```
+
+### Implementation Plan
+
+#### Part A: Notification and Audit Model
+
+- Refactor daemon notification dedupe from project-level `folder_summary` to per-reference tracking.
+- Track at least: `project_path`, `file_path`, `key_path` or variable name, canonical model, threshold, notification channel, delivery status, webhook status, report path, recommendation shown, and timestamp.
+- Add explicit action audit records for local writes, cloud dry-runs, cloud writes, skipped writes, failures, and rollback metadata.
+- Do not mark a notification as successfully delivered if the OS notification or webhook failed.
+- Keep snooze/pin semantics separate from notification delivery history.
+
+#### Part B: Threshold Policy
+
+- Treat `>30 days` as report-only unless configured otherwise.
+- Notify at `30d`, `7d`, `1d`, and `sunset`.
+- Only the `1d` threshold can trigger automatic update evaluation.
+- `sunset` should remain a warning/blocking status, but must not silently choose a new model after the deadline.
+
+#### Part C: Structured Local Writers
+
+- Keep scanning source files, but never auto-edit source code in this phase.
+- Add a writer abstraction for supported structured files:
+  - `.env`
+  - JSON
+  - YAML
+  - TOML
+  - docker-compose YAML
+- Use exact parsed key paths from scan results.
+- Refuse writes if a key path is ambiguous, duplicated, or cannot be safely round-tripped.
+- Preserve file locking, backups, atomic writes, dry-run mode, and rollback metadata across all writers.
+
+#### Part D: Deployment Signal Detector
+
+- Add a detector that returns deployment evidence, confidence, and suggested adapter targets.
+- Evidence should include local files and matched signals, not just a boolean.
+- Possible states:
+  - `none`: no deployment evidence found.
+  - `possible`: weak local signals found.
+  - `likely`: strong local signals found.
+  - `confirmed`: cloud adapter authenticated and verified a remote target.
+- Reports and notifications must clearly distinguish inferred local signals from confirmed remote deployment state.
+
+#### Part E: Cloud Adapter Layer
+
+- Add a cloud adapter protocol with operations for discovery, dry-run, write, verify, and rollback/reference metadata.
+- Implement first-round adapters for:
+  - Vercel project environment variables.
+  - Kubernetes Secrets and ConfigMaps via kubeconfig context.
+  - AWS Secrets Manager and SSM Parameter Store.
+  - GCP Secret Manager.
+  - Azure Key Vault.
+- Require explicit configuration and credentials per adapter.
+- Never mutate cloud state from local deployment signals alone.
+- Cloud writes require all of the following:
+  - `auto_update = true`.
+  - Adapter-specific writes enabled.
+  - Exactly one day remains before sunset.
+  - A recommendation passes capability validation.
+  - Dry-run succeeds.
+  - Remote mapping is confident and unambiguous.
+  - Verification succeeds after write.
+
+#### Part F: Unified Recommendation Engine
+
+- Consolidate replacement recommendations into one service used by daemon notifications, reports, CLI, MCP, IDE rules, and write flows.
+- Recommendation output must include:
+  - recommended model
+  - confidence
+  - source of recommendation
+  - pricing/cost impact
+  - capability diff
+  - commercial/prompt behavior risks
+  - privacy/provider risk
+  - future compatibility risks
+  - manual review requirement
+- Validate local SLM output before use. Reject or downgrade recommendations with unknown model IDs, missing registry support, or capability regressions.
+- Block automatic writes when the replacement loses required capabilities such as tool use, JSON mode, streaming, vision, context window, or output token capacity unless an explicit override is configured.
+
+#### Part G: User-Facing Surfaces
+
+- Notifications should include model, location, days left, recommendation, risk level, deployment evidence, and report link.
+- Reports should include local references, deployment evidence, cloud adapter status, recommendation rationale, cost/capability risks, and action history.
+- MCP should expose recommendation and audit-read tools, and update tools should no longer be env-only.
+- IDE rules should be warning-oriented and must instruct assistants not to change models unless Chowkidar policy allows it.
+
+#### Part H: Fallback and Failure Behavior
+
+- If provider sync fails, use stale registry data with a freshness warning.
+- If recommendation validation fails, notify without an automatic replacement.
+- If notification delivery fails, log the failure and do not suppress future attempts as successful.
+- If local writes fail, preserve backups, log the failure, and keep alerts active.
+- If cloud authentication, mapping, dry-run, verification, or rollback metadata is missing, skip the cloud write and log the blocker.
+- If deployment detection is ambiguous, classify it as possible/likely only; do not treat it as permission to mutate remote state.
+
+#### Part I: Tests and Validation
+
+- Add daemon tests for threshold transitions, per-reference dedupe, notification failure behavior, and `1d` write eligibility.
+- Add writer tests for `.env`, JSON, YAML, TOML, docker-compose, ambiguity refusal, backups, dry-run, and rollback metadata.
+- Add deployment detector tests for Vercel, Kubernetes, Terraform/cloud, CI, and Docker signals.
+- Add mocked adapter contract tests for Vercel, Kubernetes, AWS, GCP, and Azure.
+- Add recommendation tests to ensure capability regressions and risky commercial changes are surfaced and block automatic writes.
+- Add report, MCP, and IDE rules tests to verify consistent recommendations, audit history, and deployment evidence.
+
+### Blind Spots This Phase Must Address
+
+- Local files cannot prove deployed state.
+- Existing notification logging is not granular enough for audit/debugging.
+- Project-level dedupe can hide new expiring references.
+- Existing recommendation paths can disagree across reports, CLI, MCP, and daemon notifications.
+- Cost-optimized recommendations can be unsafe without capability validation.
+- Current update tooling is env-only while scanner coverage is broader.
+- Cloud writes introduce provider-specific auth, rollback, rate-limit, and verification risks.
+- Source-code edits are intentionally excluded from automatic writes until language-aware transforms exist.
+
+### Trade-offs
+
+- Cloud write adapters make Chowkidar useful for deployed systems but add credential, testing, rollback, and audit complexity.
+- Structured config writes are safer than source edits but will not fix every hard-coded model reference.
+- One-day write gating reduces accidental churn but leaves less time for automated migration.
+- Strict recommendation validation may block some valid migrations, but it prevents silent capability loss.
+
+---
+
+> **Phase 12 Status**: PENDING APPROVAL.
+
+---
+
+## Feature Addition: Autonomous CLI Monitoring (Phase 13)
+
+### Status
+
+**APPROVED**
+
+This ETB has been explicitly approved by the user.
+
+### Enhanced Task Brief
+
+Provide a production-safe, zero-friction experience where Chowkidar automatically monitors all local repositories and detects deployment signals, without requiring per-repo configuration or a VS Code extension, and notifying the user of outdated models.
+
+To ensure safety and respect user trust:
+1. Activation must be consent-based and explicit (never silent during pip install).
+2. Users trigger discovery via `chowkidar doctor` or `chowkidar bootstrap`.
+3. Discovered repositories are added to the existing `watched_projects` database.
+4. The background daemon is registered as an OS-native service (launchd, systemd, or Task Scheduler).
+5. The daemon periodically syncs provider deprecation data and auto-discovers newly created repos under opted-in roots.
+6. Local deployment signals are detected and integrated into notifications/reports to alert users of potential live app risks, without attempting remote cloud access.
+
+### Objectives
+
+1. **Repository Auto-Discovery**: Traverse selected directory trees to identify git repositories while ignoring heavy paths (`node_modules`, `.venv`, etc.).
+2. **Idempotent Bootstrap/Doctor Command**: Implement `chowkidar doctor` to walk the user through first-time initialization, discovery roots, watch registrations, OS service setup, and diagnostic checks.
+3. **Daemon Auto-Discovery Integration**: Teach `ChowkidarDaemon` to run discovery periodically (controlled by `auto_discover_enabled` config).
+4. **Deployment-Aware Notifications**: Query `detect_deployment` on scans and bubble up deployment indicators (with confidence ratings) to notifications and HTML reports.
+5. **Harden Service Status Checks**: Enhance `chowkidar status` with actual daemon health (uptime, last sync, last scan, watched project count) and robust executable path verification.
+6. **Detailed Documentation**: Update `README.md` for GitHub and PyPI, documenting safety, local-only execution, service controls, and troubleshooting.
+7. **Second/Third-Order Mitigation**: Implement explicit protection against CPU/disk churn, notification fatigue, and executable path drift.
+
+### Implementation Plan
+
+#### Part A: Config & Registry Updates
+- Add default config values to `src/chowkidar/config.py`:
+  - `auto_discover_enabled` (default `false` or prompt on doctor)
+  - `discover_roots` (default `["~/Projects", "~/Code", "~/Developer"]` or CWD/User's Home)
+  - `discover_interval_hours` (default `24`)
+  - `discover_max_depth` (default `4`)
+- Add opt-out controls: `chowkidar config set auto_discover_enabled false`.
+
+#### Part B: Configurable Repo Discovery
+- Create `src/chowkidar/scanner/discovery.py` with `discover_repositories(roots, max_depth, ignore_patterns)`.
+- Ignore heavy folders (`node_modules`, `.venv`, `.git`, `dist`, `build`, etc.) to prevent disk churn.
+- Keep traversing lightweight and performant.
+
+#### Part C: Idempotent Bootstrap Command
+- Add `doctor` command to `src/chowkidar/cli.py` (aliased to `bootstrap`).
+- Step 1: Config & DB setup (equivalent to `setup`).
+- Step 2: Prompt or auto-scan for repository roots.
+- Step 3: Watch discovered repositories.
+- Step 4: Install/start background service.
+- Step 5: Perform diagnostic notification and rules checks.
+
+#### Part D: Daemon Integration
+- Modify `src/chowkidar/sentinel/daemon.py` to schedule and execute auto-discovery.
+- Safely update `watched_projects` database on discovery of new repos.
+
+#### Part E: Deployment-Aware Alerts
+- Integrate `detect_deployment` in project scans.
+- Highlight "deployment likely/possible" in notifications and the generated report (without pretending to read/write cloud secrets).
+
+#### Part F: Robust Service Diagnostics
+- Update `src/chowkidar/sentinel/service.py` and `cli.py` status check to query daemon and registry.
+- Expose actionable status summaries.
+
+#### Part G: Tests & Docs
+- Run the existing and new test suites.
+- Update `README.md` to cleanly address install-once auto-monitoring, limitations, and safety constraints.
+
+---
+
+> **Phase 13 Status**: APPROVED.

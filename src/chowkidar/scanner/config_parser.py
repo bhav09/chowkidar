@@ -116,9 +116,23 @@ def parse_source_file(path: Path) -> list[ConfigModelEntry]:
         return []
 
     for line_num, line in enumerate(lines, start=1):
+        found_in_line = False
         for string_match in _SOURCE_STRING_PATTERN.finditer(line):
             candidate = string_match.group(1)
             models = find_model_strings(candidate)
+            for model in models:
+                found_in_line = True
+                entries.append(
+                    ConfigModelEntry(
+                        file_path=str(path),
+                        key_path=f"L{line_num}",
+                        model_value=model,
+                        line_number=line_num,
+                    )
+                )
+        if not found_in_line:
+            # Fallback to direct model string extraction on the line
+            models = find_model_strings(line)
             for model in models:
                 entries.append(
                     ConfigModelEntry(
@@ -139,7 +153,7 @@ def discover_config_files(directory: Path) -> dict[str, list[Path]]:
                   "docker-compose.yml", "docker-compose.yaml"}
     toml_names = {"pyproject.toml", "config.toml", "settings.toml"}
     json_names = {"config.json", "settings.json", "package.json", "tsconfig.json"}
-    source_exts = {".py", ".js", ".ts", ".jsx", ".tsx", ".mjs"}
+    source_exts = {".py", ".js", ".ts", ".jsx", ".tsx", ".mjs", ".sh", ".bash", ".zsh"}
 
     for f in directory.rglob("*"):
         if any(skip in f.parts for skip in SKIP_DIRS):

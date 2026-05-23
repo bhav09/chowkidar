@@ -15,6 +15,7 @@ from chowkidar.advisor import (
     infer_purpose_heuristically,
 )
 from chowkidar.config import Config
+from chowkidar.recommendations import build_recommendation
 from chowkidar.registry.db import ModelRecord, Registry
 from chowkidar.slm.selector import select_best_slm
 
@@ -57,6 +58,29 @@ def test_get_fallback_recommendation():
     rec, conf, reason = get_fallback_recommendation("unrecognized/model")
     assert rec == "openai/gpt-4o-mini"
     assert conf == "low"
+
+
+def test_recommendation_blocks_capability_loss():
+    record = ModelRecord(
+        id="openai/gpt-4o",
+        provider="openai",
+        aliases=[],
+        sunset_date="2026-05-22",
+        replacement="openai/o3-mini",
+        replacement_confidence="high",
+        breaking_changes=False,
+        source_url=None,
+        current_snapshot=None,
+        privacy_tier="unknown",
+        last_checked_at=None,
+        created_at=None,
+    )
+
+    recommendation = build_recommendation("openai/gpt-4o", record)
+
+    assert recommendation.manual_review_required
+    assert not recommendation.auto_write_allowed
+    assert any(r["change_type"] == "lost" for r in recommendation.capability_diffs)
 
 
 @patch("chowkidar.slm.selector.get_system_ram_gb")
