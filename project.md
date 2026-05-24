@@ -804,3 +804,33 @@ To ensure safety and respect user trust:
 ---
 
 > **Phase 13 Status**: APPROVED.
+
+---
+
+## Feature Addition: Project-Local Setup (Phase 14)
+
+### Status
+
+**APPROVED**
+
+This ETB has been explicitly approved by the user.
+
+### Enhanced Task Brief
+
+We are transitioning Chowkidar from a system-wide user-global watchdog to a project-local, project-scoped watchdog where each project has its own `.chowkidar/` configuration and database.
+
+To ensure safety, isolation, and predictability:
+1. Durable configuration, databases, logs, reports, and daemon status must live in a project-local `.chowkidar/` directory at the root of each project/repository rather than in `~/.chowkidar/`.
+2. `chowkidar setup` becomes the primary user-facing setup command for a project, while `doctor` (and its alias `bootstrap`) are demoted from the main documentation (but kept as hidden deprecated aliases pointing to setup).
+3. System-wide background services and system-wide automatic repository discovery are removed or disabled by default since each project manages its own local configuration and lifecycle.
+4. VS Code / Cursor extensions and docs must be updated to refer to `chowkidar setup` and project-local workspace configuration.
+
+### Objectives
+
+1. **Project-Local State Directory**: Move default config/state location to `.chowkidar/` inside the active project directory (finding the project root dynamically, falling back to the current directory).
+2. **Idempotent Per-Project Setup**: Update `chowkidar setup` to initialize the project-local `.chowkidar/` structure (config.toml, registry.db, logs/, reports/), and optionally run SLM setup.
+3. **Registry and Configuration Isolation**: Every CLI invocation in a project directory automatically targets that project's `.chowkidar/` folder. Running commands outside a project directory defaults to the current working directory's `.chowkidar/` or guides the user to run `setup`.
+4. **Demote Doctor/Bootstrap**: Mark `doctor` and `bootstrap` commands as hidden, pointing them to `setup` with a deprecation/rename warning.
+5. **Update Documentation**: Refactor `README.md` and `COMMANDS.md` to remove instructions about system-wide installation/daemon and document the per-project setup.
+6. **Robust Test Updates**: Update the test suite (especially `test_doctor.py` and other stateful tests) to verify project-local `.chowkidar` creation and ensure system-wide service installation is not triggered.
+

@@ -28,32 +28,24 @@ Everything runs on your machine. Zero data exfiltration.
 - **AI-Assistant Rules & MCP Server**
   Generates zero-config rule instructions (`.mdc`, `CLAUDE.md`, etc.) to guide Cursor, Claude Code, Copilot, and Windsurf, alongside an interactive MCP server.
 
-## Installation & Guided Setup
+## Installation & Project Setup
 
 ```bash
-# 1. Install globally via pipx (recommended) or pip
-pipx install chowkidar
+# 1. Install chowkidar in your project directory
+pip install chowkidar
 
-# 2. Run the idempotent guided setup & diagnostics check
-chowkidar doctor
+# 2. Run the idempotent project-scoped setup
+chowkidar setup
 ```
 
-### Autonomous Monitoring
+### Project-Scoped Monitoring
 
-The recommended `chowkidar doctor` (or `chowkidar bootstrap`) command provides a zero-friction setup that walks you through everything in one go:
-1. **Config & Database**: Creates your config and database files under `~/.chowkidar/`.
-2. **Repository Auto-Discovery**: Traverses selected workspace directory trees (defaulting to `~/Projects`, `~/Code`, `~/Developer`, and current directory) to find Git repositories, safely pruning heavy paths (like `node_modules`, `.venv`, and `dist`) to avoid CPU/disk churn.
-3. **OS Service Registration**: Registers and starts the background daemon using native OS schedulers (`launchd` on macOS, `systemd` user service on Linux, or Windows Task Scheduler) so monitoring loops start at login.
-4. **Initial Scan & Sync**: Syncs provider deprecation tables and performs an immediate first-time scan on all watched repositories to make alerts and rules files active right away.
+The `chowkidar setup` command provides a zero-friction setup that configures everything for your project:
+1. **Config & Database**: Creates your config and database files under `.chowkidar/` inside your project root.
+2. **Initial Scan & Sync**: Syncs provider deprecation tables and performs an immediate first-time scan on the repository to make alerts and rules files active right away.
 
-You can customize discovery roots and paths inside `~/.chowkidar/config.toml` or via the CLI:
+You can customize behavior inside `.chowkidar/config.toml` or via the CLI:
 ```bash
-# Toggle automatic background repository discovery
-chowkidar config auto_discover_enabled true
-
-# Configure path roots to discover Git repositories in
-chowkidar config discover_roots '["~/MyRepos", "~/github"]'
-
 # Change directory scan depth
 chowkidar config discover_max_depth 5
 ```
@@ -62,8 +54,8 @@ chowkidar config discover_max_depth 5
 
 Below are the 10 most relevant commands for daily use.
 
-### 1. `chowkidar doctor`
-Guided idempotent diagnosis, automatic repository discovery, database sync, and OS service setup.
+### 1. `chowkidar setup`
+Project-scoped configuration, database initialization, provider sync, and initial repository scan.
 
 ### 2. `chowkidar sync`
 Fetches and updates the local deprecation registry from providers.

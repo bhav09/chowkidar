@@ -5,7 +5,7 @@ This document provides a comprehensive reference of all CLI commands available i
 ## Core Commands
 
 ### `chowkidar setup`
-Initializes Chowkidar configuration, database, and system-specific local SLM components.
+Initializes project-local Chowkidar configuration, database, and system-specific local SLM components.
 - **Usage**: `chowkidar setup [--skip-slm]`
 - **Options**:
   - `--skip-slm`: Skips Ollama check and model download (runs on provider metadata alone).

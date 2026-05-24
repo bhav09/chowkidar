@@ -6,6 +6,7 @@ auto-update, rules writing, SLM model choice, scan intervals, etc.
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 from typing import Any
@@ -18,7 +19,21 @@ else:
     except ModuleNotFoundError:  # pragma: no cover
         import tomli as tomllib  # type: ignore[no-redef]
 
-CHOWKIDAR_HOME = Path.home() / ".chowkidar"
+def get_chowkidar_home() -> Path:
+    env_home = os.environ.get("CHOWKIDAR_HOME")
+    if env_home:
+        return Path(env_home).resolve()
+    
+    current = Path.cwd().resolve()
+    for parent in [current] + list(current.parents):
+        if (parent / ".git").exists() or (parent / ".chowkidar").exists():
+            return parent / ".chowkidar"
+        if parent == Path.home() or parent == parent.parent:
+            break
+    return current / ".chowkidar"
+
+
+CHOWKIDAR_HOME = get_chowkidar_home()
 
 DEFAULTS: dict[str, Any] = {
     "auto_update": False,

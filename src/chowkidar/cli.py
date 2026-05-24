@@ -506,47 +506,11 @@ def snooze(
 @app.command()
 def setup(
     skip_slm: bool = typer.Option(False, "--skip-slm", help="Skip SLM/Ollama setup"),
-) -> None:
-    """First-run setup: initialize config, database, and optionally install Ollama + SLM."""
-    config = _get_config()
-    config.save()
-    console.print(f"[green]✓[/green] Config initialized: {config.path}")
-
-    from .registry.db import Registry
-    registry = Registry()
-    registry.init_db()
-    registry.close()
-    console.print(f"[green]✓[/green] Database initialized: {CHOWKIDAR_HOME / 'registry.db'}")
-
-    from .slm.setup import full_setup
-    with console.status("Setting up SLM..."):
-        success, message = full_setup(skip_slm=skip_slm)
-    if success:
-        console.print(f"[green]✓[/green] {message}")
-    else:
-        console.print(f"[yellow]⚠[/yellow] {message}")
-
-    console.print("\n[bold green]Setup complete![/bold green]")
-    console.print("Next steps:")
-    console.print("  1. chowkidar sync          — fetch deprecation data")
-    console.print("  2. chowkidar scan .         — scan current project")
-    console.print("  3. chowkidar watch .        — register for monitoring")
-    console.print("  4. chowkidar install-service — enable background daemon")
-
-
-# --- doctor ---
-
-@app.command(name="doctor")
-def doctor_cmd(
     non_interactive: bool = typer.Option(False, "--non-interactive", help="Run without prompts (automatic options selected)"),
 ) -> None:
-    """Idempotent guided configuration diagnostics, repository discovery, and OS service installation."""
-    import logging
-    logger = logging.getLogger("chowkidar.cli")
+    """Initialize project-local Chowkidar configuration, database, and optional SLM."""
+    console.print(Panel("[bold cyan]Chowkidar Project-Local Setup[/bold cyan]", subtitle="Local-first LLM deprecation watchdog"))
 
-    console.print(Panel("[bold cyan]Chowkidar Doctor & Guided Setup[/bold cyan]", subtitle="Local-first LLM deprecation watchdog"))
-
-    # Step 1: Config & DB Initialization
     config = _get_config()
     config.save()
     console.print(f"  [green]✓[/green] Config initialized: {config.path}")
@@ -556,83 +520,27 @@ def doctor_cmd(
     registry.init_db()
     console.print(f"  [green]✓[/green] Database initialized: {CHOWKIDAR_HOME / 'registry.db'}")
 
-    # Step 2: Auto-Discover Repositories
-    console.print("\n[bold]1. Scanning for repositories...[/bold]")
-    from .scanner import discover_repositories
-    
-    roots = config.get("discover_roots", ["~/Projects", "~/Code", "~/Developer"])
-    depth = config.get("discover_max_depth", 4)
-    
-    with console.status("Auto-discovering repositories..."):
-        discovered_paths = discover_repositories(roots, max_depth=depth)
-    
-    # Also check if current working directory is a git repo and not already in discovered list
-    cwd = Path.cwd().resolve()
-    git_cwd_dir = cwd / ".git"
-    if git_cwd_dir.exists() and git_cwd_dir.is_dir() and cwd not in discovered_paths:
-        discovered_paths.append(cwd)
+    # Register the current project workspace for watching
+    project_root = CHOWKIDAR_HOME.parent.resolve()
+    registry.watch_project(str(project_root))
+    console.print(f"  [green]✓[/green] Registered project path: {project_root}")
 
-    # Filter out paths that are already watched
-    watched_projects = registry.get_watched_projects()
-    new_paths = [p for p in discovered_paths if str(p) not in watched_projects]
-
-    if watched_projects:
-        console.print(f"  Currently watching [bold]{len(watched_projects)}[/bold] projects.")
-        for p in watched_projects:
-            console.print(f"    • {p} [dim](active)[/dim]")
-
-    if new_paths:
-        console.print(f"  Found [bold]{len(new_paths)}[/bold] new git repositories:")
-        for p in new_paths[:10]:
-            console.print(f"    • {p}")
-        if len(new_paths) > 10:
-            console.print(f"    ... and {len(new_paths) - 10} more.")
-
-        # Interactive check
-        should_watch = True
-        if not non_interactive:
-            should_watch = typer.confirm("\nDo you want Chowkidar to watch and monitor these new repositories?", default=True)
-
-        if should_watch:
-            for p in new_paths:
-                registry.watch_project(str(p))
-            console.print(f"  [green]✓[/green] Registered [bold]{len(new_paths)}[/bold] new projects.")
-            config.set("auto_discover_enabled", True)
-            config.save()
-        else:
-            console.print("  [yellow]⚠[/yellow] Skipped registering new repositories.")
+    # Set up local SLM
+    from .slm.setup import full_setup
+    with console.status("Setting up SLM..."):
+        success, message = full_setup(skip_slm=skip_slm)
+    if success:
+        console.print(f"  [green]✓[/green] {message}")
     else:
-        console.print("  No new repositories found to register.")
+        console.print(f"  [yellow]⚠[/yellow] {message}")
 
-    # Step 3: Check OS Service Installation
-    console.print("\n[bold]2. Background Service Diagnostics[/bold]")
-    from .sentinel.service import is_service_installed, install_service
-    
-    service_installed = is_service_installed()
-    if service_installed:
-        console.print("  [green]✓[/green] Background OS service is already installed and registered.")
-    else:
-        console.print("  [yellow]⚠[/yellow] Background OS service is not installed.")
-        should_install = True
-        if not non_interactive:
-            should_install = typer.confirm("Do you want to install and enable the background daemon service?", default=True)
-            
-        if should_install:
-            with console.status("Installing background service..."):
-                success, msg = install_service()
-            if success:
-                console.print(f"  [green]✓[/green] {msg}")
-            else:
-                console.print(f"  [red]✗[/red] {msg}")
-        else:
-            console.print("  [yellow]⚠[/yellow] Background service installation skipped. To start manually, run 'chowkidar daemon'.")
-
-    # Step 4: First-time sync and scan
-    console.print("\n[bold]3. Database Sync & Initial Scan[/bold]")
-    
-    # Perform a sync
+    # Database sync & initial scan
     last_sync = registry.last_sync_time()
-    if not last_sync or non_interactive or typer.confirm("Do you want to sync the deprecation registry with LLM providers now?", default=True):
+    should_sync = True
+    if not last_sync and not non_interactive:
+        should_sync = typer.confirm("Do you want to sync the deprecation registry with LLM providers now?", default=True)
+
+    if should_sync:
         console.print("  Syncing deprecation registry...")
         from .providers.openai_provider import OpenAIProvider
         from .providers.anthropic_provider import AnthropicProvider
@@ -666,7 +574,8 @@ def doctor_cmd(
                             source_url=dep.source_url,
                         )
                 except Exception as e:
-                    logger.debug("Failed to sync %s during doctor: %s", provider.name, e)
+                    import logging
+                    logging.getLogger("chowkidar.cli").debug("Failed to sync %s during setup: %s", provider.name, e)
         import asyncio
         try:
             asyncio.run(_sync())
@@ -674,33 +583,46 @@ def doctor_cmd(
         except Exception as e:
             console.print(f"  [red]✗[/red] Sync failed: {e}")
 
-    # Perform an initial scan on watched projects
-    projects = registry.get_watched_projects()
-    if projects:
-        console.print(f"  Scanning {len(projects)} watched projects...")
-        from .scanner import scan_directory
-        for project_path in projects:
-            try:
-                scan_res = scan_directory(project_path)
-                registry.save_scan_results(project_path, scan_res.all_models)
-                registry.update_watch_timestamp(project_path)
-            except Exception as e:
-                logger.debug("Scan failed for %s during doctor: %s", project_path, e)
+    # Initial scan of current project
+    console.print(f"  Scanning project {project_root}...")
+    from .scanner import scan_directory
+    try:
+        scan_res = scan_directory(project_root)
+        registry.save_scan_results(str(project_root), scan_res.all_models)
+        registry.update_watch_timestamp(str(project_root))
         console.print("  [green]✓[/green] Initial scan complete.")
+    except Exception as e:
+        import logging
+        logging.getLogger("chowkidar.cli").debug("Scan failed during setup: %s", e)
 
     registry.close()
 
-    console.print("\n[bold green]Chowkidar Doctor has completed checkups![/bold green]")
-    console.print("Chowkidar is fully configured to protect your applications from model sunsets entirely locally!")
+    console.print("\n[bold green]Chowkidar project setup complete![/bold green]")
+    console.print("Chowkidar is fully configured to protect this project locally!")
+    console.print("Next steps:")
+    console.print("  1. chowkidar check .  — run instant check in current project")
+    console.print("  2. chowkidar daemon   — run foreground daemon check cycle")
+
+
+# --- doctor ---
+
+@app.command(name="doctor", deprecated=True, hidden=True)
+def doctor_cmd(
+    non_interactive: bool = typer.Option(False, "--non-interactive", help="Run without prompts (automatic options selected)"),
+) -> None:
+    """Deprecated: Guided setup has been replaced by the project-local 'chowkidar setup' command."""
+    console.print("[yellow]⚠ The 'doctor' command is deprecated and has been replaced by 'chowkidar setup' for project-local setup.[/yellow]")
+    setup(skip_slm=True, non_interactive=non_interactive)
 
 
 # Also expose as alias bootstrap
-@app.command(name="bootstrap", hidden=True)
+@app.command(name="bootstrap", deprecated=True, hidden=True)
 def bootstrap_cmd(
     non_interactive: bool = typer.Option(False, "--non-interactive", help="Run without prompts"),
 ) -> None:
-    """Guided bootstrap (alias of doctor)."""
-    doctor_cmd(non_interactive=non_interactive)
+    """Deprecated: Guided bootstrap (alias of doctor)."""
+    console.print("[yellow]⚠ The 'bootstrap' command is deprecated and has been replaced by 'chowkidar setup' for project-local setup.[/yellow]")
+    setup(skip_slm=True, non_interactive=non_interactive)
 
 
 # --- daemon ---

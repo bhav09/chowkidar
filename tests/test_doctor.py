@@ -1,9 +1,9 @@
-"""Tests for the doctor/bootstrap logic and daemon status checks."""
+"""Tests for the setup logic and daemon status checks."""
 
 import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
-from chowkidar.config import CHOWKIDAR_HOME, Config
+from chowkidar.config import Config
 from chowkidar.sentinel.daemon import ChowkidarDaemon
 from chowkidar.registry.db import Registry
 
@@ -41,39 +41,37 @@ def test_daemon_write_status(tmp_path):
         assert "last_heartbeat" in data
 
 
-@patch("chowkidar.scanner.discover_repositories")
-@patch("chowkidar.sentinel.service.is_service_installed")
-@patch("chowkidar.sentinel.service.install_service")
-def test_doctor_command_logic(mock_install, mock_is_installed, mock_discover, tmp_path):
-    from chowkidar.cli import doctor_cmd, _get_config
+@patch("chowkidar.slm.setup.full_setup")
+def test_setup_command_logic(mock_full_setup, tmp_path):
+    from chowkidar.cli import setup
     
-    mock_discover.return_value = [tmp_path / "discovered_repo"]
-    mock_is_installed.return_value = False
-    mock_install.return_value = (True, "Mock service installed successfully")
+    mock_full_setup.return_value = (True, "SLM setup skipped")
     
-    config_file = tmp_path / "config.toml"
+    config_file = tmp_path / ".chowkidar" / "config.toml"
     config = Config(config_file)
     
-    with patch("chowkidar.cli.CHOWKIDAR_HOME", tmp_path), \
+    with patch("chowkidar.cli.CHOWKIDAR_HOME", tmp_path / ".chowkidar"), \
          patch("chowkidar.cli._get_config", return_value=config), \
          patch("chowkidar.registry.db.Registry") as mock_registry_class, \
-         patch("typer.confirm", return_value=True):
+         patch("chowkidar.cli.typer.confirm", return_value=False), \
+         patch("chowkidar.scanner.scan_directory") as mock_scan_directory:
          
         mock_registry = MagicMock()
-        mock_registry.get_watched_projects.return_value = []
+        mock_registry.last_sync_time.return_value = None
         mock_registry_class.return_value = mock_registry
         
-        # Call doctor command in non-interactive mode (automatically registers and installs)
-        doctor_cmd(non_interactive=True)
+        mock_scan_res = MagicMock()
+        mock_scan_res.all_models = []
+        mock_scan_directory.return_value = mock_scan_res
         
-        # Verify repository discovery was triggered
-        mock_discover.assert_called_once()
+        # Call setup command in non-interactive mode
+        setup(skip_slm=True, non_interactive=True)
         
-        # Verify watch_project was registered
-        mock_registry.watch_project.assert_any_call(str(tmp_path / "discovered_repo"))
+        # Verify database and watch project registration
+        mock_registry.init_db.assert_called_once()
+        mock_registry.watch_project.assert_called_once_with(str(tmp_path))
         
-        # Verify service installation was triggered
-        mock_install.assert_called_once()
-        
-        # Verify auto_discover_enabled was updated to True
-        assert config.get("auto_discover_enabled") is True
+        # Verify scanning was triggered
+        mock_scan_directory.assert_called_once_with(tmp_path)
+        mock_registry.save_scan_results.assert_called_once()
+        mock_registry.update_watch_timestamp.assert_called_once()
