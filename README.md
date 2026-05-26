@@ -1,6 +1,7 @@
 # Chowkidar
 
-[![PyPI Version](https://img.shields.io/pypi/v/chowkidar.svg)](https://pypi.org/project/chowkidar/)
+[![PyPI Version](https://img.shields.io/pypi/v/chowkidar.svg)](https://pypi.org/project/chowkidar/0.7.6/)
+[![GitHub Release](https://img.shields.io/github/v/release/bhav09/chowkidar)](https://github.com/bhav09/chowkidar/releases/latest)
 [![PyPI Downloads](https://static.pepy.tech/personalized-badge/chowkidar?period=total&units=INTERNATIONAL_SYSTEM&left_color=GREY&right_color=GREEN&left_text=downloads)](https://pepy.tech/projects/chowkidar)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
